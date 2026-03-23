@@ -10,24 +10,25 @@ const CHAT_MODEL       = "gpt-4o-mini";
 const MAX_CHUNKS       = 8;
 const MAX_TOKENS       = 1800;
 
+// ✅ CORS headers ampliados para incluir x-client-info y apikey que envía el SDK de Supabase
 function corsHeaders(origin: string | null) {
   return {
     "Access-Control-Allow-Origin": origin ?? "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-client-info, apikey, x-supabase-client",
   };
 }
 
 Deno.serve(async (req) => {
   const origin = req.headers.get("Origin");
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders(origin) });
+    return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
 
   try {
     const body = await req.json();
     const userMessage: string  = body.message ?? "";
-    const roleFilter:  string  = body.role     ?? "";   // "" = público
+    const roleFilter:  string  = body.role     ?? "";
     const history:     any[]   = body.history  ?? [];
 
     if (!userMessage.trim()) {
@@ -88,9 +89,6 @@ INSTRUCCIONES:
 - Para saludos y preguntas generales, responde amablemente
 - Si preguntan sobre funciones del sistema SCO, explica que necesitas documentación cargada para responder con precisión
 - Cuando el usuario haga una pregunta sobre el sistema y no tengas contexto, sugiere al administrador cargar documentación PDF
-- Para preguntas fuera del sistema: "${
-      "Entiendo tu pregunta, pero mi especialidad es ayudarte con información específica del sistema SCO. ¿Hay algo sobre [menciona temas de los documentos] en lo que pueda ayudarte?"
-    }"
 - Máximo 300 palabras`;
 
     // ── 4. Historial de conversación ──────────────────────────────
@@ -126,9 +124,6 @@ INSTRUCCIONES:
         answer,
         chunks_used: (chunks ?? []).length,
         has_context: hasContext,
-        greetings: {
-          general: '¡Hola! 👋 Soy CostBot, tu asistente para el sistema SCO. Estoy aquí para ayudarte con cualquier duda. ¿En qué puedo asistirte hoy?'
-        }
       }),
       { headers: { ...corsHeaders(origin), "Content-Type": "application/json" } }
     );

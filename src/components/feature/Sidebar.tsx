@@ -76,6 +76,12 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       permission: 'tareas:view'
     },
     {
+      name: 'Reporte del Día',
+      icon: 'ri-calendar-check-line',
+      path: '/reporte-dia',
+      requireAuth: true
+    },
+    {
       name: 'Correspondencia',
       icon: 'ri-mail-send-line',
       path: '/correspondencia',

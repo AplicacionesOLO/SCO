@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { sendQuestionToCostBot, saveChatHistory, loadChatHistory, clearChatHistory } from '../../services/costbotService';
+import { sendQuestionToCostBot, saveChatHistory, loadChatHistory, clearChatHistory, purgeExpiredHistories } from '../../services/costbotService';
 import { getPageContext, getPageContextLabel } from '../../utils/costbotContext';
 import { useAuth } from '../../hooks/useAuth';
 import ConfirmationDialog from '../base/ConfirmationDialog';
@@ -15,20 +15,39 @@ export default function CostBotWidget() {
   const [currentContext, setCurrentContext] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  
+
+  // 🔒 Ref que rastrea a qué userId pertenecen los mensajes en memoria.
+  // Evita que mensajes del usuario anterior se persistan bajo el nuevo usuario.
+  const messagesOwnerRef = useRef<string | null>(null);
+
   // 🆕 Estado para el diálogo de confirmación
   const [showClearDialog, setShowClearDialog] = useState(false);
 
-  // Cargar historial al montar o cambiar de contexto
+  // 🧹 Limpiar historiales expirados una sola vez al montar el widget
   useEffect(() => {
-    if (!user) return;
+    purgeExpiredHistories();
+  }, []);
+
+  // Cargar historial cuando cambia el usuario o la ruta
+  useEffect(() => {
+    // Si no hay usuario, limpiar todo inmediatamente
+    if (!user) {
+      messagesOwnerRef.current = null;
+      setMessages([]);
+      setCurrentContext('');
+      return;
+    }
 
     const context = getPageContext();
     setCurrentContext(context);
 
+    // Marcar de quién son los mensajes ANTES de setMessages
+    // para que el efecto de guardado sepa que son válidos
+    messagesOwnerRef.current = user.id;
+
     const history = loadChatHistory(user.id, context);
     setMessages(history);
-  }, [user, window.location.pathname]);
+  }, [user?.id, window.location.pathname]);
 
   // Auto-scroll al último mensaje
   useEffect(() => {
@@ -36,8 +55,13 @@ export default function CostBotWidget() {
   }, [messages]);
 
   // Guardar historial cuando cambian los mensajes
+  // 🔒 Solo guarda si los mensajes pertenecen al usuario actual
   useEffect(() => {
-    if (user && messages.length > 0) {
+    if (
+      user &&
+      messages.length > 0 &&
+      messagesOwnerRef.current === user.id
+    ) {
       saveChatHistory(user.id, currentContext, messages);
     }
   }, [messages, user, currentContext]);

@@ -49,6 +49,7 @@ export interface MetricaColaborador {
   alerta: 'ok' | 'bajo' | 'exceso' | 'sospechoso';
 }
 
+<<<<<<< HEAD
 export interface DetalleReporteExport {
   colaborador_id: number;
   nombre: string;
@@ -63,6 +64,8 @@ export interface DetalleReporteExport {
   observaciones: string;
 }
 
+=======
+>>>>>>> d2a8ce309b31eed137b76e3d57cfe5bec6c176a0
 // ─── Servicio ───────────────────────────────────────────────────────────────
 
 class ReporteDiaService {
@@ -281,6 +284,7 @@ class ReporteDiaService {
       return [];
     }
   }
+<<<<<<< HEAD
 
   /**
    * Obtener detalle completo para exportación (incluye tipo_trabajo por tarea)
@@ -366,6 +370,8 @@ class ReporteDiaService {
       return [];
     }
   }
+=======
+>>>>>>> d2a8ce309b31eed137b76e3d57cfe5bec6c176a0
 }
 
 export const reporteDiaService = new ReporteDiaService();

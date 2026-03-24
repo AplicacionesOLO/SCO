@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { reporteDiaService, type MetricaColaborador } from '../../../services/reporteDiaService';
+<<<<<<< HEAD
 import { exportarMetricasExcel } from '../../../utils/exportMetricasExcel';
+=======
+>>>>>>> d2a8ce309b31eed137b76e3d57cfe5bec6c176a0
 
 interface Props {
   tiendaId: string;
@@ -62,7 +65,10 @@ export default function MetricasColaboradores({ tiendaId }: Props) {
   const [metricas, setMetricas] = useState<MetricaColaborador[]>([]);
   const [loading, setLoading] = useState(false);
   const [vistaFecha, setVistaFecha] = useState<'hoy' | 'semana' | 'personalizado'>('hoy');
+<<<<<<< HEAD
   const [exportando, setExportando] = useState(false);
+=======
+>>>>>>> d2a8ce309b31eed137b76e3d57cfe5bec6c176a0
 
   const cargar = useCallback(async (desde: string, hasta: string) => {
     setLoading(true);
@@ -96,6 +102,7 @@ export default function MetricasColaboradores({ tiendaId }: Props) {
     }
   };
 
+<<<<<<< HEAD
   const handleExport = async () => {
     setExportando(true);
     try {
@@ -106,6 +113,8 @@ export default function MetricasColaboradores({ tiendaId }: Props) {
     }
   };
 
+=======
+>>>>>>> d2a8ce309b31eed137b76e3d57cfe5bec6c176a0
   // Totales del resumen superior
   const totalColab       = metricas.length;
   const cumplenEstandar  = metricas.filter((m) => m.cumple_estandar).length;
@@ -127,6 +136,12 @@ export default function MetricasColaboradores({ tiendaId }: Props) {
             <h2 className="text-base font-semibold text-gray-900">Métricas de Equipo</h2>
             <p className="text-xs text-gray-500">Estándar: {ESTANDAR_HORAS}h diarias por colaborador</p>
           </div>
+<<<<<<< HEAD
+=======
+          <span className="ml-1 px-2 py-0.5 bg-violet-100 text-violet-700 text-xs font-medium rounded-full">
+            Solo Admin / Valor Agregado
+          </span>
+>>>>>>> d2a8ce309b31eed137b76e3d57cfe5bec6c176a0
         </div>
 
         {/* Filtros de rango */}
@@ -177,6 +192,7 @@ export default function MetricasColaboradores({ tiendaId }: Props) {
           >
             <i className="ri-refresh-line"></i> Actualizar
           </button>
+<<<<<<< HEAD
 
           {/* Botón Exportar Excel */}
           <button
@@ -200,6 +216,8 @@ export default function MetricasColaboradores({ tiendaId }: Props) {
               </>
             )}
           </button>
+=======
+>>>>>>> d2a8ce309b31eed137b76e3d57cfe5bec6c176a0
         </div>
       </div>
 

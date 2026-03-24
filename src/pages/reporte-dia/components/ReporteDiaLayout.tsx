@@ -1,8 +1,11 @@
 import type { ReactNode } from 'react';
 import type { MiColaborador } from '../../../services/reporteDiaService';
 
+<<<<<<< HEAD
 type TabId = 'mis-tareas' | 'metricas';
 
+=======
+>>>>>>> d2a8ce309b31eed137b76e3d57cfe5bec6c176a0
 interface Props {
   colaborador: MiColaborador | null;
   totalTareas: number;
@@ -13,9 +16,12 @@ interface Props {
   onFiltroEstadoChange: (v: string) => void;
   onBusquedaChange: (v: string) => void;
   onRefresh: () => void;
+<<<<<<< HEAD
   puedeVerMetricas: boolean;
   tabActivo: TabId;
   onTabChange: (tab: TabId) => void;
+=======
+>>>>>>> d2a8ce309b31eed137b76e3d57cfe5bec6c176a0
   children: ReactNode;
 }
 
@@ -31,9 +37,12 @@ export default function ReporteDiaLayout({
   onFiltroEstadoChange,
   onBusquedaChange,
   onRefresh,
+<<<<<<< HEAD
   puedeVerMetricas,
   tabActivo,
   onTabChange,
+=======
+>>>>>>> d2a8ce309b31eed137b76e3d57cfe5bec6c176a0
   children,
 }: Props) {
   const hoy = new Date().toLocaleDateString('es-CR', {
@@ -72,6 +81,7 @@ export default function ReporteDiaLayout({
             </button>
           </div>
 
+<<<<<<< HEAD
           {/* ── Pestañas ── */}
           {puedeVerMetricas && (
             <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 w-fit mb-4">
@@ -102,6 +112,10 @@ export default function ReporteDiaLayout({
 
           {/* Tarjetas de resumen — solo en pestaña Mis Tareas */}
           {colaborador && tabActivo === 'mis-tareas' && (
+=======
+          {/* Tarjetas de resumen */}
+          {colaborador && (
+>>>>>>> d2a8ce309b31eed137b76e3d57cfe5bec6c176a0
             <div className="grid grid-cols-3 gap-4 mb-5">
               <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
                 <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Total asignadas</p>
@@ -118,8 +132,13 @@ export default function ReporteDiaLayout({
             </div>
           )}
 
+<<<<<<< HEAD
           {/* Filtros — solo en pestaña Mis Tareas */}
           {colaborador && tabActivo === 'mis-tareas' && (
+=======
+          {/* Filtros */}
+          {colaborador && (
+>>>>>>> d2a8ce309b31eed137b76e3d57cfe5bec6c176a0
             <div className="flex items-center gap-3">
               <div className="relative flex-1 max-w-xs">
                 <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>

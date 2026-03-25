@@ -71,15 +71,11 @@ class UsuariosPendientesService {
       if (errorTienda || !tienda) throw new Error('Tienda no encontrada o inactiva');
 
       const { error: errorAsignacion } = await supabase
-<<<<<<< HEAD
         .from('usuario_tiendas')
         .upsert(
           { usuario_id: request.usuario_id, tienda_id: request.tienda_id, activo: true },
           { onConflict: 'usuario_id,tienda_id' }
         );
-=======
-        .from('usuario_tiendas').insert({ usuario_id: request.usuario_id, tienda_id: request.tienda_id, activo: true });
->>>>>>> d2a8ce309b31eed137b76e3d57cfe5bec6c176a0
       if (errorAsignacion) throw errorAsignacion;
 
       const { error: errorTiendaActual } = await supabase

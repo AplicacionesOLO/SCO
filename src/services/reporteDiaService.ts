@@ -49,6 +49,20 @@ export interface MetricaColaborador {
   alerta: 'ok' | 'bajo' | 'exceso' | 'sospechoso';
 }
 
+export interface DetalleReporteExport {
+  colaborador_id: number;
+  nombre: string;
+  fecha_trabajo: string;
+  consecutivo: string;
+  tipo_trabajo: string;
+  descripcion: string;
+  hora_inicio: string;
+  hora_fin: string;
+  horas: number;
+  unidades: number;
+  observaciones: string;
+}
+
 // ─── Servicio ───────────────────────────────────────────────────────────────
 
 class ReporteDiaService {
@@ -263,6 +277,91 @@ class ReporteDiaService {
         else if (hrs > 10)        alerta = 'sospechoso';  // más de 10h, posible error
         return { ...m, horas_total: hrs, productividad_por_hora: prod, cumple_estandar: hrs >= ESTANDAR, alerta };
       }).sort((a, b) => a.nombre.localeCompare(b.nombre));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Obtener detalle completo para exportación (incluye tipo_trabajo por tarea)
+   */
+  async getDetalleCompletoParaExport(
+    tiendaId: string,
+    fechaDesde: string,
+    fechaHasta: string
+  ): Promise<DetalleReporteExport[]> {
+    try {
+      const { data: reportes, error } = await supabase
+        .from('tareas_reportes_colaboradores')
+        .select(`
+          colaborador_id,
+          fecha_trabajo,
+          fecha_hora_inicio,
+          fecha_hora_fin,
+          horas_trabajadas,
+          unidades_procesadas,
+          observaciones,
+          tarea_id
+        `)
+        .eq('tienda_id', tiendaId)
+        .gte('fecha_trabajo', fechaDesde)
+        .lte('fecha_trabajo', fechaHasta);
+
+      if (error || !reportes?.length) return [];
+
+      // Traer nombres de colaboradores
+      const colaboradorIds = [...new Set(reportes.map((r) => r.colaborador_id))];
+      const { data: colaboradores } = await supabase
+        .from('tareas_colaboradores')
+        .select('id, nombre')
+        .in('id', colaboradorIds);
+
+      const nombreMap: Record<number, string> = {};
+      (colaboradores || []).forEach((c) => { nombreMap[c.id] = c.nombre; });
+
+      // Traer datos de las tareas
+      const tareaIds = [...new Set(reportes.map((r) => r.tarea_id))];
+      const { data: tareas } = await supabase
+        .from('tareas')
+        .select('id, consecutivo, descripcion_breve, datos_formulario')
+        .in('id', tareaIds);
+
+      const tareaMap: Record<number, { consecutivo: string; descripcion: string; datos_formulario: Record<string, any> }> = {};
+      (tareas || []).forEach((t) => {
+        tareaMap[t.id] = {
+          consecutivo: t.consecutivo || '',
+          descripcion: t.descripcion_breve || '',
+          datos_formulario: t.datos_formulario || {},
+        };
+      });
+
+      const formatTime = (iso?: string | null): string => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        const hh = d.getHours().toString().padStart(2, '0');
+        const mm = d.getMinutes().toString().padStart(2, '0');
+        return `${hh}:${mm}`;
+      };
+
+      return reportes.map((r) => {
+        const tarea = tareaMap[r.tarea_id] || { consecutivo: '', descripcion: '', datos_formulario: {} };
+        const df = tarea.datos_formulario;
+        const tipoTrabajo = df.tipo_trabajo || df.solicitud_epa || df.solicitud_cofersa || df.departamento_solicitante || '—';
+
+        return {
+          colaborador_id: r.colaborador_id,
+          nombre: nombreMap[r.colaborador_id] || `Colab. #${r.colaborador_id}`,
+          fecha_trabajo: r.fecha_trabajo,
+          consecutivo: tarea.consecutivo,
+          tipo_trabajo: tipoTrabajo,
+          descripcion: tarea.descripcion,
+          hora_inicio: formatTime(r.fecha_hora_inicio),
+          hora_fin: formatTime(r.fecha_hora_fin),
+          horas: r.horas_trabajadas || 0,
+          unidades: r.unidades_procesadas || 0,
+          observaciones: r.observaciones || '',
+        };
+      }).sort((a, b) => a.nombre.localeCompare(b.nombre) || a.fecha_trabajo.localeCompare(b.fecha_trabajo));
     } catch {
       return [];
     }

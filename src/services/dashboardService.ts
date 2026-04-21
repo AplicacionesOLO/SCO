@@ -112,8 +112,8 @@ export const dashboardService = {
       const [inventoryResult, quotesResult, clientsResult, productsResult] = await Promise.all([
         supabase.from('inventario').select('cantidad_articulo, precio_articulo, costo_articulo').eq('tienda_id', tiendaId),
         supabase.from('cotizaciones').select('estado, total').eq('tienda_id', tiendaId),
-        supabase.from('clientes').select('id').eq('tienda_id', tiendaId),
-        supabase.from('productos').select('id').eq('tienda_id', tiendaId)
+        supabase.from('clientes').select('id_cliente').eq('tienda_id', tiendaId),
+        supabase.from('productos').select('id_producto').eq('tienda_id', tiendaId)
       ]);
 
       const totalInventory = inventoryResult.data?.length || 0;
@@ -123,12 +123,8 @@ export const dashboardService = {
       const activeQuotes = quotesResult.data?.filter(q => 
         ['borrador', 'enviada'].includes(q.estado)).length || 0;
 
-      const { data: pendingData } = await supabase
-        .from('solicitudes')
-        .select('id, estado_id')
-        .eq('estado_id', 1);
-
-      const pendingRequests = pendingData?.length || 0;
+      // La tabla 'solicitudes' no existe en este sistema
+      const pendingRequests = 0;
       const totalClients = clientsResult.data?.length || 0;
       const totalProducts = productsResult.data?.length || 0;
       const lowStock = inventoryResult.data?.filter(item => item.cantidad_articulo < 10).length || 0;
@@ -184,7 +180,7 @@ export const dashboardService = {
       const tiendaId = await getCurrentUserStore();
       const { data, error } = await supabase
         .from('inventario')
-        .select(`cantidad_articulo, precio_articulo, costo_articulo, categorias (nombre)`)
+        .select(`cantidad_articulo, precio_articulo, costo_articulo, categorias_inventario (nombre_categoria)`)
         .eq('tienda_id', tiendaId)
         .eq('activo', true);
 
@@ -192,7 +188,7 @@ export const dashboardService = {
 
       const categoryData: { [key: string]: { count: number; value: number } } = {};
       data?.forEach(item => {
-        const category = item.categorias?.nombre || 'Sin categoría';
+        const category = (item as any).categorias_inventario?.nombre_categoria || 'Sin categoría';
         const cantidad = item.cantidad_articulo || 0;
         const precio = item.precio_articulo || item.costo_articulo || 0;
         const value = cantidad * precio;
@@ -225,34 +221,18 @@ export const dashboardService = {
 
       const { data: quotes } = await supabase
         .from('cotizaciones')
-        .select(`id, numero_cotizacion, estado, created_at, usuarios (nombre_completo)`)
+        .select(`id, numero_cotizacion, estado, created_at`)
         .eq('tienda_id', tiendaId)
         .order('created_at', { ascending: false })
-        .limit(5);
+        .limit(8);
 
       quotes?.forEach(quote => {
         activities.push({
           id: quote.id, type: 'cotizacion',
-          description: `Cotización ${quote.numero_cotizacion} ${quote.estado}`,
-          user: quote.usuarios?.nombre_completo || 'Usuario',
+          description: `Cotización ${quote.numero_cotizacion} — ${quote.estado}`,
+          user: 'Sistema',
           timestamp: new Date(quote.created_at).toLocaleDateString('es-ES'),
           status: quote.estado === 'aceptada' ? 'success' : 'info'
-        });
-      });
-
-      const { data: requests } = await supabase
-        .from('solicitudes')
-        .select(`id, descripcion, estado_id, created_at, usuarios (nombre_completo)`)
-        .order('created_at', { ascending: false })
-        .limit(3);
-
-      requests?.forEach(request => {
-        activities.push({
-          id: request.id + 1000, type: 'solicitud',
-          description: `Solicitud: ${request.descripcion?.substring(0, 50)}...`,
-          user: request.usuarios?.nombre_completo || 'Usuario',
-          timestamp: new Date(request.created_at).toLocaleDateString('es-ES'),
-          status: request.estado_id === 3 ? 'success' : 'warning'
         });
       });
 

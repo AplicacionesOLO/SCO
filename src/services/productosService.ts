@@ -46,11 +46,11 @@ export const getProductoById = async (id: string, currentStore: { id: string } |
       .from('productos')
       .select(`
         *,
-        categoria:categorias(nombre)
+        categorias(nombre)
       `)
-      .eq('id', id)
-      .eq('tienda_id', currentStore.id) // FILTRO OBLIGATORIO POR TIENDA
-      .single();
+      .eq('id_producto', id)
+      .eq('tienda_id', currentStore.id)
+      .maybeSingle();
 
     return { data, error };
   } catch (error) {
@@ -82,10 +82,10 @@ export const updateProducto = async (id: string, producto: any, currentStore: { 
     const { data, error } = await supabase
       .from('productos')
       .update(producto)
-      .eq('id', id)
-      .eq('tienda_id', currentStore.id) // FILTRO OBLIGATORIO POR TIENDA
+      .eq('id_producto', id)
+      .eq('tienda_id', currentStore.id)
       .select()
-      .single();
+      .maybeSingle();
 
     return { data, error };
   } catch (error) {
@@ -99,8 +99,8 @@ export const deleteProducto = async (id: string, currentStore: { id: string } | 
     const { error } = await supabase
       .from('productos')
       .delete()
-      .eq('id', id)
-      .eq('tienda_id', currentStore.id); // FILTRO OBLIGATORIO POR TIENDA
+      .eq('id_producto', id)
+      .eq('tienda_id', currentStore.id);
 
     return { error };
   } catch (error) {
@@ -113,9 +113,9 @@ export const buscarProductos = async (search: string, currentStore: { id: string
   try {
     const { data, error } = await supabase
       .from('productos')
-      .select('id, nombre, codigo, precio_venta')
-      .eq('tienda_id', currentStore.id) // FILTRO OBLIGATORIO POR TIENDA
-      .or(`nombre.ilike.%${search}%,codigo.ilike.%${search}%`)
+      .select('id_producto, descripcion_producto, codigo_producto')
+      .eq('tienda_id', currentStore.id)
+      .or(`descripcion_producto.ilike.%${search}%,codigo_producto.ilike.%${search}%`)
       .eq('activo', true)
       .limit(10);
 

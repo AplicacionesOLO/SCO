@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { reporteDiaService, type MetricaColaborador } from '../../../services/reporteDiaService';
+import { exportarMetricasExcel } from '../../../utils/exportMetricasExcel';
 
 interface Props {
   tiendaId: string;
@@ -61,6 +62,7 @@ export default function MetricasColaboradores({ tiendaId }: Props) {
   const [metricas, setMetricas] = useState<MetricaColaborador[]>([]);
   const [loading, setLoading] = useState(false);
   const [vistaFecha, setVistaFecha] = useState<'hoy' | 'semana' | 'personalizado'>('hoy');
+  const [exportando, setExportando] = useState(false);
 
   const cargar = useCallback(async (desde: string, hasta: string) => {
     setLoading(true);
@@ -94,6 +96,16 @@ export default function MetricasColaboradores({ tiendaId }: Props) {
     }
   };
 
+  const handleExport = async () => {
+    setExportando(true);
+    try {
+      const detalle = await reporteDiaService.getDetalleCompletoParaExport(tiendaId, fechaDesde, fechaHasta);
+      exportarMetricasExcel(detalle, fechaDesde, fechaHasta);
+    } finally {
+      setExportando(false);
+    }
+  };
+
   // Totales del resumen superior
   const totalColab       = metricas.length;
   const cumplenEstandar  = metricas.filter((m) => m.cumple_estandar).length;
@@ -115,9 +127,6 @@ export default function MetricasColaboradores({ tiendaId }: Props) {
             <h2 className="text-base font-semibold text-gray-900">Métricas de Equipo</h2>
             <p className="text-xs text-gray-500">Estándar: {ESTANDAR_HORAS}h diarias por colaborador</p>
           </div>
-          <span className="ml-1 px-2 py-0.5 bg-violet-100 text-violet-700 text-xs font-medium rounded-full">
-            Solo Admin / Valor Agregado
-          </span>
         </div>
 
         {/* Filtros de rango */}
@@ -167,6 +176,29 @@ export default function MetricasColaboradores({ tiendaId }: Props) {
             className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg cursor-pointer whitespace-nowrap transition-colors flex items-center gap-1.5"
           >
             <i className="ri-refresh-line"></i> Actualizar
+          </button>
+
+          {/* Botón Exportar Excel */}
+          <button
+            onClick={handleExport}
+            disabled={exportando || metricas.length === 0}
+            className={`px-3 py-1.5 text-xs rounded-lg cursor-pointer whitespace-nowrap transition-colors flex items-center gap-1.5 font-medium ${
+              metricas.length === 0
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : exportando
+                ? 'bg-emerald-100 text-emerald-600 cursor-wait'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+            }`}
+          >
+            {exportando ? (
+              <>
+                <i className="ri-loader-4-line animate-spin"></i> Generando...
+              </>
+            ) : (
+              <>
+                <i className="ri-file-excel-2-line"></i> Exportar .xlsx
+              </>
+            )}
           </button>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { useAuth } from '../../../hooks/useAuth';
 import CrearArticuloModal from './CrearArticuloModal';
 import DetalleComponenteModal from './DetalleComponenteModal';
 
@@ -9,7 +10,7 @@ interface Articulo {
   descripcion_articulo: string;
   precio_articulo: number;
   categoria?: {
-    nombre: string;
+    nombre_categoria: string;
   };
   unidad?: {
     nombre: string;
@@ -30,6 +31,7 @@ export default function BuscarArticuloModal({ onSeleccionar, onCerrar }: Props) 
   const [showDetalleModal, setShowDetalleModal] = useState(false);
   const [articuloSeleccionado, setArticuloSeleccionado] = useState<Articulo | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout>();
+  const { currentStore } = useAuth();
 
   useEffect(() => {
     if (busqueda.trim().length >= 2) {
@@ -53,6 +55,11 @@ export default function BuscarArticuloModal({ onSeleccionar, onCerrar }: Props) 
   }, [busqueda]);
 
   const buscarArticulos = async () => {
+    if (!currentStore?.id) {
+      setArticulos([]);
+      return;
+    }
+
     setLoading(true);
     
     try {
@@ -63,9 +70,10 @@ export default function BuscarArticuloModal({ onSeleccionar, onCerrar }: Props) 
           codigo_articulo,
           descripcion_articulo,
           precio_articulo,
-          categoria:categorias(nombre),
+          categoria:categorias_inventario(nombre_categoria),
           unidad:unidades_medida(nombre, simbolo)
         `)
+        .eq('tienda_id', currentStore.id)
         .or(`descripcion_articulo.ilike.%${busqueda}%,codigo_articulo.ilike.%${busqueda}%,id_articulo.eq.${isNaN(parseInt(busqueda)) ? 0 : parseInt(busqueda)}`)
         .limit(10);
 
@@ -133,14 +141,21 @@ export default function BuscarArticuloModal({ onSeleccionar, onCerrar }: Props) 
 
           {/* Resultados */}
           <div className="space-y-2 max-h-60 overflow-y-auto">
-            {busqueda.trim().length < 2 && (
+            {!currentStore?.id && (
+              <div className="text-center py-8 text-red-500">
+                <i className="ri-store-3-line text-3xl mb-2"></i>
+                <p>No hay tienda seleccionada</p>
+              </div>
+            )}
+
+            {currentStore?.id && busqueda.trim().length < 2 && (
               <div className="text-center py-8 text-gray-500">
                 <i className="ri-search-line text-3xl mb-2"></i>
                 <p>Escribe al menos 2 caracteres para buscar</p>
               </div>
             )}
 
-            {busqueda.trim().length >= 2 && articulos.length === 0 && !loading && (
+            {currentStore?.id && busqueda.trim().length >= 2 && articulos.length === 0 && !loading && (
               <div className="text-center py-8">
                 <i className="ri-file-search-line text-3xl text-gray-400 mb-2"></i>
                 <p className="text-gray-500 mb-4">No se encontraron artículos</p>
@@ -168,7 +183,7 @@ export default function BuscarArticuloModal({ onSeleccionar, onCerrar }: Props) 
                       </span>
                       {articulo.categoria && (
                         <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
-                          {articulo.categoria.nombre}
+                          {articulo.categoria.nombre_categoria}
                         </span>
                       )}
                     </div>
@@ -196,7 +211,7 @@ export default function BuscarArticuloModal({ onSeleccionar, onCerrar }: Props) 
           </div>
 
           {/* Botón crear nuevo si hay resultados */}
-          {busqueda.trim().length >= 2 && articulos.length > 0 && (
+          {currentStore?.id && busqueda.trim().length >= 2 && articulos.length > 0 && (
             <div className="mt-4 pt-4 border-t">
               <button
                 onClick={() => setShowCrearModal(true)}

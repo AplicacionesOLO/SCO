@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import type { MiColaborador } from '../../../services/reporteDiaService';
 
+type TabId = 'mis-tareas' | 'metricas';
+
 interface Props {
   colaborador: MiColaborador | null;
   totalTareas: number;
@@ -11,6 +13,9 @@ interface Props {
   onFiltroEstadoChange: (v: string) => void;
   onBusquedaChange: (v: string) => void;
   onRefresh: () => void;
+  puedeVerMetricas: boolean;
+  tabActivo: TabId;
+  onTabChange: (tab: TabId) => void;
   children: ReactNode;
 }
 
@@ -26,6 +31,9 @@ export default function ReporteDiaLayout({
   onFiltroEstadoChange,
   onBusquedaChange,
   onRefresh,
+  puedeVerMetricas,
+  tabActivo,
+  onTabChange,
   children,
 }: Props) {
   const hoy = new Date().toLocaleDateString('es-CR', {
@@ -64,8 +72,36 @@ export default function ReporteDiaLayout({
             </button>
           </div>
 
-          {/* Tarjetas de resumen */}
-          {colaborador && (
+          {/* ── Pestañas ── */}
+          {puedeVerMetricas && (
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 w-fit mb-4">
+              <button
+                onClick={() => onTabChange('mis-tareas')}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap ${
+                  tabActivo === 'mis-tareas'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <i className="ri-task-line text-base"></i>
+                Mis Tareas
+              </button>
+              <button
+                onClick={() => onTabChange('metricas')}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer whitespace-nowrap ${
+                  tabActivo === 'metricas'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <i className="ri-bar-chart-grouped-line text-base"></i>
+                Métricas de Equipo
+              </button>
+            </div>
+          )}
+
+          {/* Tarjetas de resumen — solo en pestaña Mis Tareas */}
+          {colaborador && tabActivo === 'mis-tareas' && (
             <div className="grid grid-cols-3 gap-4 mb-5">
               <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
                 <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Total asignadas</p>
@@ -82,8 +118,8 @@ export default function ReporteDiaLayout({
             </div>
           )}
 
-          {/* Filtros */}
-          {colaborador && (
+          {/* Filtros — solo en pestaña Mis Tareas */}
+          {colaborador && tabActivo === 'mis-tareas' && (
             <div className="flex items-center gap-3">
               <div className="relative flex-1 max-w-xs">
                 <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>

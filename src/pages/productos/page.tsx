@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import ProductosForm from './components/ProductosForm';
 import ProductosTable from './components/ProductosTable';
 import ProductosLayout from './components/ProductosLayout';
+import CategoriasProductosManager from './components/CategoriasProductosManager';
 import { PermissionButton } from '../../components/base/PermissionButton';
 import { showAlert, showConfirm } from '../../utils/dialog';
 
@@ -25,7 +26,10 @@ interface Categoria {
   nombre: string;
 }
 
+type TabActiva = 'productos' | 'categorias';
+
 export default function ProductosPage() {
+  const [tabActiva, setTabActiva] = useState<TabActiva>('productos');
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -225,11 +229,11 @@ export default function ProductosPage() {
   const registroDesde = totalRegistros === 0 ? 0 : (paginaActual - 1) * registrosPorPagina + 1;
   const registroHasta = Math.min(paginaActual * registrosPorPagina, totalRegistros);
 
-  if (loading && productos.length === 0) {
+  if (loading && productos.length === 0 && tabActiva === 'productos') {
     return (
       <ProductosLayout>
         <div className="flex justify-center items-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-800"></div>
         </div>
       </ProductosLayout>
     );
@@ -238,17 +242,58 @@ export default function ProductosPage() {
   return (
     <ProductosLayout>
       <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900">Gestión de Productos</h1>
-          <PermissionButton
-            permission="productos:create"
-            variant="primary"
-            onClick={() => setShowForm(true)}
-          >
-            <i className="ri-add-line mr-2"></i>
-            Nuevo Producto
-          </PermissionButton>
+        {/* Header con pestañas */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Productos</h1>
+          </div>
+          {tabActiva === 'productos' && (
+            <PermissionButton
+              permission="productos:create"
+              variant="primary"
+              onClick={() => setShowForm(true)}
+            >
+              <i className="ri-add-line mr-2"></i>
+              Nuevo Producto
+            </PermissionButton>
+          )}
         </div>
+
+        {/* Pestañas */}
+        <div className="border-b border-gray-200">
+          <nav className="flex gap-1 -mb-px">
+            <button
+              onClick={() => setTabActiva('productos')}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+                tabActiva === 'productos'
+                  ? 'border-gray-900 text-gray-900'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <i className="ri-box-3-line mr-2"></i>
+              Productos
+            </button>
+            <button
+              onClick={() => setTabActiva('categorias')}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+                tabActiva === 'categorias'
+                  ? 'border-gray-900 text-gray-900'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <i className="ri-price-tag-3-line mr-2"></i>
+              Categorías
+            </button>
+          </nav>
+        </div>
+
+        {/* Contenido de la pestaña Categorías */}
+        {tabActiva === 'categorias' && (
+          <CategoriasProductosManager />
+        )}
+
+        {/* Contenido de la pestaña Productos */}
+        {tabActiva === 'productos' && (<>
 
         {/* Filtros */}
         <div className="bg-white rounded-lg shadow p-4">
@@ -428,6 +473,7 @@ export default function ProductosPage() {
           onInactivar={handleInactivarProducto}
           onEliminar={handleEliminarProducto}
         />
+        </>)}
       </div>
     </ProductosLayout>
   );

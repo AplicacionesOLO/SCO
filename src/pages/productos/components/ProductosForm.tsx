@@ -152,7 +152,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
           .from('productos')
           .select('id_producto')
           .eq('codigo_sistema', codigoGenerado)
-          .single();
+          .maybeSingle();
 
         if (!existente) {
           codigoUnico = true;
@@ -390,7 +390,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
           .from('productos')
           .select('id_producto')
           .eq('codigo_producto', codigoGenerado)
-          .single();
+          .maybeSingle();
 
         if (!existente) {
           codigoUnico = true;

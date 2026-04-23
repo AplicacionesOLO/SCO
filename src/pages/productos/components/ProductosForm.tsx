@@ -54,10 +54,8 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [costoTotal, setCostoTotal] = useState(0);
-  const [tiendaActual, setTiendaActual] = useState<number | null>(null);
 
   useEffect(() => {
-    cargarTiendaActual();
     cargarCategorias();
 
     if (productoEditar) {
@@ -79,37 +77,6 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
     calcularCostoTotal();
   }, [bomItems]);
 
-  const cargarTiendaActual = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setError('Usuario no autenticado');
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('usuario_tienda_actual')
-        .select('tienda_id')
-        .eq('usuario_id', user.id)
-        .maybeSingle();
-
-      if (error) {
-        console.error('Error obteniendo tienda actual:', error);
-        setError('No se pudo obtener la tienda actual. Por favor, selecciona una tienda.');
-        return;
-      }
-
-      if (data?.tienda_id) {
-        setTiendaActual(data.tienda_id);
-      } else {
-        setError('No tienes una tienda seleccionada. Por favor, selecciona una tienda.');
-      }
-    } catch (err) {
-      console.error('Error cargando tienda actual:', err);
-      setError('Error al cargar la tienda actual');
-    }
-  };
-
   const cargarCategorias = async () => {
     try {
       if (!currentStore?.id) return;
@@ -130,7 +97,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
   };
 
   const generarCodigoSistema = async () => {
-    if (!tiendaActual) {
+    if (!currentStore?.id) {
       setError('No hay tienda seleccionada para generar el código');
       return;
     }
@@ -138,7 +105,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
       const { data } = await supabase
         .from('productos')
         .select('codigo_sistema')
-        .eq('tienda_id', tiendaActual)
+        .eq('tienda_id', currentStore.id)
         .not('codigo_sistema', 'is', null)
         .order('codigo_sistema', { ascending: false })
         .limit(1);
@@ -163,7 +130,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         const { data: existente } = await supabase
           .from('productos')
           .select('id_producto')
-          .eq('tienda_id', tiendaActual)
+          .eq('tienda_id', currentStore.id)
           .eq('codigo_sistema', codigoGenerado)
           .maybeSingle();
 
@@ -182,7 +149,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
   };
 
   const generarCodigoProducto = async (): Promise<string> => {
-    if (!tiendaActual) {
+    if (!currentStore?.id) {
       setError('No hay tienda seleccionada para generar el código');
       return '';
     }
@@ -190,7 +157,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
       const { data } = await supabase
         .from('productos')
         .select('codigo_producto')
-        .eq('tienda_id', tiendaActual)
+        .eq('tienda_id', currentStore.id)
         .like('codigo_producto', 'PROD-%')
         .order('codigo_producto', { ascending: false })
         .limit(1);
@@ -218,7 +185,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         const { data: existente } = await supabase
           .from('productos')
           .select('id_producto')
-          .eq('tienda_id', tiendaActual)
+          .eq('tienda_id', currentStore.id)
           .eq('codigo_producto', codigoGenerado)
           .maybeSingle();
 
@@ -299,7 +266,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
       return false;
     }
 
-    if (!tiendaActual) {
+    if (!currentStore?.id) {
       setError('No hay tienda seleccionada. No se puede guardar el producto.');
       return false;
     }
@@ -310,7 +277,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         const { data: existente, error: errCheck } = await supabase
           .from('productos')
           .select('id_producto')
-          .eq('tienda_id', tiendaActual)
+          .eq('tienda_id', currentStore.id)
           .eq('codigo_producto', formData.codigo_producto)
           .maybeSingle();
 
@@ -338,7 +305,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         const { data: existente, error: errCheck } = await supabase
           .from('productos')
           .select('id_producto')
-          .eq('tienda_id', tiendaActual)
+          .eq('tienda_id', currentStore.id)
           .eq('codigo_sistema', formData.codigo_sistema)
           .maybeSingle();
 
@@ -382,7 +349,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!tiendaActual) {
+    if (!currentStore?.id) {
       setError('No hay tienda seleccionada');
       showError('No se puede guardar: no hay tienda seleccionada');
       return;
@@ -406,7 +373,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
           const { data: existingProduct, error: errExisting } = await supabase
             .from('productos')
             .select('id_producto')
-            .eq('tienda_id', tiendaActual)
+            .eq('tienda_id', currentStore.id)
             .eq('codigo_producto', codigoProducto)
             .maybeSingle();
 
@@ -423,7 +390,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
             const { data: stillExists } = await supabase
               .from('productos')
               .select('id_producto')
-              .eq('tienda_id', tiendaActual)
+              .eq('tienda_id', currentStore.id)
               .eq('codigo_producto', codigoProducto)
               .maybeSingle();
 
@@ -459,7 +426,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
           .from('productos')
           .update(updateData)
           .eq('id_producto', productoEditar.id_producto)
-          .eq('tienda_id', tiendaActual)
+          .eq('tienda_id', currentStore.id)
           .select()
           .single();
 
@@ -471,7 +438,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
               .from('productos')
               .update(updateData)
               .eq('id_producto', productoEditar.id_producto)
-              .eq('tienda_id', tiendaActual)
+              .eq('tienda_id', currentStore.id)
               .select()
               .single();
             if (retryError) throw retryError;
@@ -504,7 +471,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
           categoria_id: parseInt(formData.categoria_id),
           codigo_sistema: formData.codigo_sistema,
           costo_total_bom: costoTotal,
-          tienda_id: tiendaActual,
+          tienda_id: currentStore.id,
         };
         // Solo incluir moneda si el backend la soporta
         if (formData.moneda) {

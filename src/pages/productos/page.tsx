@@ -75,10 +75,18 @@ export default function ProductosPage() {
   const cargarProductos = async () => {
     setLoading(true);
     try {
+      if (!currentStore?.id) {
+        setProductos([]);
+        setTotalRegistros(0);
+        setLoading(false);
+        return;
+      }
+
       // Primero obtener el total de registros para la paginación
       let countQuery = supabase
         .from('productos')
-        .select('*', { count: 'exact', head: true });
+        .select('*', { count: 'exact', head: true })
+        .eq('tienda_id', currentStore.id);
 
       // Aplicar los mismos filtros para el conteo
       if (filtros.busqueda.trim()) {
@@ -107,6 +115,7 @@ export default function ProductosPage() {
           categorias(nombre),
           costo_total_bom:bom_items(precio_ajustado)
         `)
+        .eq('tienda_id', currentStore.id)
         .range(desde, hasta);
 
       // Filtro de búsqueda

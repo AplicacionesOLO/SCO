@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { CotizacionFormData, CotizacionItem } from '../../../types/cotizacion';
 import { formatCurrency, formatNumber, parseCurrency, getCurrencySymbol, formatCurrencyWithSymbol } from '../../../lib/currency';
@@ -59,6 +59,8 @@ export function CotizacionForm({ cotizacion, onSubmit, onCancel, isOpen }: Cotiz
   const [loading, setLoading] = useState(false);
   const [actualizandoTipoCambio, setActualizandoTipoCambio] = useState(false);
   const [mensajeTipoCambio, setMensajeTipoCambio] = useState('Tipo de cambio según Banco Central de Costa Rica (BCCR). Haga clic en actualizar para obtener el valor más reciente.');
+  const [expandedItems, setExpandedItems] = useState<{ [key: number]: boolean }>({});
+  const [itemsCargaError, setItemsCargaError] = useState<string | null>(null);
 
   // Cargar datos cuando se abre el modal
   useEffect(() => {
@@ -124,9 +126,10 @@ export function CotizacionForm({ cotizacion, onSubmit, onCancel, isOpen }: Cotiz
     }
   };
 
-  // Función para cargar items de la cotización con información de productos
+  // Función para cargar items de la cotización con información de productos y BOM
   const cargarItemsCotizacion = async (cotizacionId: number) => {
     try {
+      setItemsCargaError(null);
       console.log('Cargando items de cotización:', cotizacionId);
       
       // Primero obtener los items de la cotización
@@ -137,18 +140,26 @@ export function CotizacionForm({ cotizacion, onSubmit, onCancel, isOpen }: Cotiz
 
       if (error) {
         console.error('Error cargando items:', error);
+        setItemsCargaError('Error de permisos al cargar items. Es posible que la cotización esté en un estado que requiere permisos especiales.');
         return;
       }
 
       console.log('Items cargados:', items);
+
+      if (!items || items.length === 0) {
+        // Si la cotización tiene subtotal > 0 pero no hay items, es un problema
+        setItemsCargaError('No se encontraron items para esta cotización. Puede deberse a un problema de permisos (RLS).');
+        return;
+      }
 
       if (items && items.length > 0) {
         // Obtener los IDs únicos de productos
         const productosIds = [...new Set(items.map(item => item.producto_id))].filter(id => id);
         
         let productosInfo: any[] = [];
+        let bomItemsMap: { [productId: number]: any[] } = {};
         
-        // Si hay productos, cargar su información por separado
+        // Si hay productos, cargar su información y BOM items
         if (productosIds.length > 0) {
           let productos: any[] | null = null;
           let productosError: any = null;
@@ -177,35 +188,76 @@ export function CotizacionForm({ cotizacion, onSubmit, onCancel, isOpen }: Cotiz
               moneda: (p as any).moneda || 'CRC'
             }));
           }
+
+          // Cargar BOM items para cada producto
+          const { data: bomData, error: bomError } = await supabase
+            .from('bom_items')
+            .select('*')
+            .in('product_id', productosIds);
+
+          if (!bomError && bomData) {
+            bomItemsMap = bomData.reduce((acc: any, bom: any) => {
+              if (!acc[bom.product_id]) acc[bom.product_id] = [];
+              acc[bom.product_id].push(bom);
+              return acc;
+            }, {});
+          }
         }
 
-        // Formatear items con información de productos
-        const itemsFormateados = items.map((item: any) => {
+        // Formatear items con información de productos y BOM
+        const itemsFormateados = items.map((item: any, index: number) => {
           // Buscar información del producto
           const productoInfo = productosInfo.find(p => p.id_producto === item.producto_id);
+          const bomItems = bomItemsMap[item.producto_id] || [];
+
+          // Construir descripción: priorizar el campo descripcion del item, luego del producto
+          const descripcion =
+            item.descripcion ||
+            productoInfo?.descripcion_producto ||
+            `Producto ID: ${item.producto_id}`;
           
           return {
+            id: item.id || index,
+            // ✅ Preservar TODOS los campos del item original para re-inserción
+            tipo_item: item.tipo_item || 'normal',
+            descripcion,
+            dimensiones: item.dimensiones || null,
+            material: item.material || null,
+            tapacantos: item.tapacantos || null,
+            cnc1: item.cnc1 || null,
+            cnc2: item.cnc2 || null,
+            datos_optimizador: item.datos_optimizador || null,
             producto_id: item.producto_id,
             cantidad: item.cantidad || 1,
             precio_unitario: item.precio_unitario || 0,
             descuento: item.descuento || 0,
             subtotal: item.subtotal || item.total_linea || 0,
-            // Agregar información del producto para mostrar en la tabla
+            // Info adicional para mostrar en la tabla (no se guarda en BD)
             producto_info: productoInfo || {
               codigo_producto: 'N/A',
-              descripcion_producto: item.descripcion || `Producto ID: ${item.producto_id}`,
+              descripcion_producto: descripcion,
               costo_total_bom: item.precio_unitario || 0,
               moneda: 'CRC'
-            }
+            },
+            bom_items: bomItems
           };
         });
 
-        console.log('Items formateados:', itemsFormateados);
+        console.log('Items formateados con BOM:', itemsFormateados);
 
         setFormData(prev => ({
           ...prev,
           items: itemsFormateados
         }));
+
+        // Expandir todos los items que tienen BOM por defecto
+        const expanded: { [key: number]: boolean } = {};
+        itemsFormateados.forEach((item: any) => {
+          if (item.bom_items && item.bom_items.length > 0) {
+            expanded[item.id] = true;
+          }
+        });
+        setExpandedItems(expanded);
 
         // Recalcular totales con los items cargados
         calcularTotales(itemsFormateados);
@@ -452,6 +504,13 @@ export function CotizacionForm({ cotizacion, onSubmit, onCancel, isOpen }: Cotiz
     }
   };
 
+  const toggleExpandItem = (itemId: number) => {
+    setExpandedItems(prev => ({
+      ...prev,
+      [itemId]: !prev[itemId]
+    }));
+  };
+
   const obtenerProductoPorId = (productoId: number) => {
     // Primero buscar en la lista de productos cargados
     const producto = productos.find(p => p.id_producto === productoId);
@@ -684,6 +743,25 @@ export function CotizacionForm({ cotizacion, onSubmit, onCancel, isOpen }: Cotiz
               </div>
             </div>
 
+            {/* Error de carga de items */}
+            {itemsCargaError && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0">
+                    <i className="ri-error-warning-line text-amber-500 text-xl"></i>
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-sm font-medium text-amber-800">Advertencia al cargar items</h4>
+                    <p className="text-sm text-amber-700 mt-1">{itemsCargaError}</p>
+                    <p className="text-sm text-amber-600 mt-2">
+                      <strong>Importante:</strong> Si guarda la cotización ahora, los items originales se perderán.
+                      Por favor contacte al administrador si el problema persiste.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Lista de Items */}
             {formData.items.length > 0 && (
               <div>
@@ -717,61 +795,115 @@ export function CotizacionForm({ cotizacion, onSubmit, onCancel, isOpen }: Cotiz
                     <tbody className="bg-white divide-y divide-gray-200">
                       {formData.items.map((item, index) => {
                         const producto = obtenerProductoPorId(item.producto_id);
+                        const itemId = (item as any).id || index;
+                        const bomItems = (item as any).bom_items || [];
+                        const hasBom = bomItems.length > 0;
                         return (
-                          <tr key={index} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div>
-                                <div className="text-sm font-medium text-gray-900">
-                                  {producto?.descripcion_producto || 'Producto no encontrado'}
+                          <React.Fragment key={index}>
+                            <tr className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {producto?.descripcion_producto || 'Producto no encontrado'}
+                                  </div>
+                                  <div className="text-sm text-gray-500">
+                                    Código: {producto?.codigo_producto || 'N/A'}
+                                  </div>
+                                  {hasBom && (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleExpandItem(itemId)}
+                                      className="mt-1 text-xs text-teal-600 hover:text-teal-800 flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <i className={`ri-eye-line transition-transform duration-200 ${expandedItems[itemId] ? 'rotate-180' : ''}`}></i>
+                                      <span>{expandedItems[itemId] ? 'Ocultar componentes' : `Ver ${bomItems.length} componente${bomItems.length > 1 ? 's' : ''}`}</span>
+                                    </button>
+                                  )}
                                 </div>
-                                <div className="text-sm text-gray-500">
-                                  Código: {producto?.codigo_producto || 'N/A'}
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <input
-                                type="number"
-                                value={item.cantidad}
-                                onChange={(e) => actualizarItem(index, 'cantidad', parseInt(e.target.value) || 0)}
-                                className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                min="1"
-                              />
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <input
-                                type="number"
-                                value={item.precio_unitario}
-                                onChange={(e) => actualizarItem(index, 'precio_unitario', parseFloat(e.target.value) || 0)}
-                                className="w-28 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                step="0.01"
-                              />
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <input
-                                type="number"
-                                value={item.descuento}
-                                onChange={(e) => actualizarItem(index, 'descuento', parseFloat(e.target.value) || 0)}
-                                className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                min="0"
-                                max="100"
-                                step="0.01"
-                              />
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              {getCurrencySymbol(formData.moneda)}{formatNumber(item.subtotal || 0)}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => eliminarItem(index)}
-                                className="text-red-600 hover:text-red-900 cursor-pointer p-1 hover:bg-red-50 rounded"
-                                title="Eliminar producto"
-                              >
-                                <i className="ri-delete-bin-line"></i>
-                              </button>
-                            </td>
-                          </tr>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <input
+                                  type="number"
+                                  value={item.cantidad}
+                                  onChange={(e) => actualizarItem(index, 'cantidad', parseInt(e.target.value) || 0)}
+                                  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  min="1"
+                                />
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <input
+                                  type="number"
+                                  value={item.precio_unitario}
+                                  onChange={(e) => actualizarItem(index, 'precio_unitario', parseFloat(e.target.value) || 0)}
+                                  className="w-28 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  step="0.01"
+                                />
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <input
+                                  type="number"
+                                  value={item.descuento}
+                                  onChange={(e) => actualizarItem(index, 'descuento', parseFloat(e.target.value) || 0)}
+                                  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  min="0"
+                                  max="100"
+                                  step="0.01"
+                                />
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {getCurrencySymbol(formData.moneda)}{formatNumber(item.subtotal || 0)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => eliminarItem(index)}
+                                  className="text-red-600 hover:text-red-900 cursor-pointer p-1 hover:bg-red-50 rounded"
+                                  title="Eliminar producto"
+                                >
+                                  <i className="ri-delete-bin-line"></i>
+                                </button>
+                              </td>
+                            </tr>
+                            {/* Sub-tabla BOM items */}
+                            {expandedItems[itemId] && hasBom && (
+                              <tr>
+                                <td colSpan={6} className="px-6 py-0">
+                                  <div className="border-l-4 border-teal-200 bg-teal-50 px-4 py-3 ml-4 mr-2 my-2 rounded">
+                                    <div className="text-xs font-semibold mb-2 text-gray-700 uppercase tracking-wide">Componentes utilizados:</div>
+                                    <table className="w-full text-sm">
+                                      <thead className="text-gray-600">
+                                        <tr>
+                                          <th className="text-left py-1 px-2 border-b border-gray-200">Código</th>
+                                          <th className="text-left py-1 px-2 border-b border-gray-200">Descripción</th>
+                                          <th className="text-right py-1 px-2 border-b border-gray-200">Cantidad</th>
+                                          <th className="text-left py-1 px-2 border-b border-gray-200">Unidad</th>
+                                          <th className="text-right py-1 px-2 border-b border-gray-200">Precio Unit.</th>
+                                          <th className="text-right py-1 px-2 border-b border-gray-200">Total</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {bomItems.map((comp: any) => {
+                                          const cantidadTotal = Number(item.cantidad) * Number(comp.cantidad_x_unidad || 0);
+                                          const precioUnitario = Number(comp.precio_ajustado || comp.precio_unitario || comp.precio_unitario_base || 0);
+                                          const totalComponente = cantidadTotal * precioUnitario;
+                                          return (
+                                            <tr key={comp.id} className="hover:bg-white/50">
+                                              <td className="py-1 px-2 border-b border-gray-100">{comp.id_componente || '—'}</td>
+                                              <td className="py-1 px-2 border-b border-gray-100">{comp.nombre_componente || 'Sin descripción'}</td>
+                                              <td className="text-right py-1 px-2 border-b border-gray-100">{cantidadTotal.toLocaleString('es-CR', { maximumFractionDigits: 2 })}</td>
+                                              <td className="py-1 px-2 border-b border-gray-100">{comp.unidad || '—'}</td>
+                                              <td className="text-right py-1 px-2 border-b border-gray-100">{getCurrencySymbol(formData.moneda)}{formatNumber(precioUnitario)}</td>
+                                              <td className="text-right py-1 px-2 border-b border-gray-100 font-medium">{getCurrencySymbol(formData.moneda)}{formatNumber(totalComponente)}</td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
                         );
                       })}
                     </tbody>

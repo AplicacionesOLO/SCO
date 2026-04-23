@@ -104,7 +104,18 @@ const CotizacionesPage: React.FC = () => {
   const handleFormSubmit = async (values: Cotizacion) => {
     try {
       if (editingCotizacion) {
-        await CotizacionService.actualizarCotizacion(editingCotizacion.id!, values);
+        // MODO EDICIÓN: Si no hay items en el formulario (ej: falló carga por RLS),
+        // NO enviamos la propiedad 'items' para que el servicio NO borre los existentes
+        const valuesParaEnviar = { ...values };
+        
+        // Si items está vacío y la cotización original tenía items, no enviamos items
+        // para evitar borrado accidental
+        if ((!valuesParaEnviar.items || valuesParaEnviar.items.length === 0) && editingCotizacion.subtotal > 0) {
+          console.warn('[CotizacionesPage] Edición sin items detectada. Cotización original tenía subtotal > 0. No se enviará propiedad items para preservar los existentes.');
+          delete (valuesParaEnviar as any).items;
+        }
+        
+        await CotizacionService.actualizarCotizacion(editingCotizacion.id!, valuesParaEnviar);
       } else {
         await CotizacionService.crearCotizacion(values);
       }

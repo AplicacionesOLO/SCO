@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
@@ -105,9 +104,14 @@ export default function CotizacionPrintPage() {
         .from('cotizaciones')
         .select('*')
         .eq('id', cotizacionId)
-        .single();
+        .maybeSingle();
 
       if (cotizacionError) throw cotizacionError;
+      if (!cotizacionData) {
+        setError('Cotización no encontrada. Es posible que no exista o no tengas permisos para verla.');
+        setLoading(false);
+        return;
+      }
 
       // 2. Cargar cliente - manejo más robusto
       let clienteData = null;
@@ -116,7 +120,7 @@ export default function CotizacionPrintPage() {
           .from('clientes')
           .select('*')
           .eq('id', cotizacionData.cliente_id)
-          .single();
+          .maybeSingle();
 
         if (!clienteError && cliente) {
           clienteData = cliente;
@@ -151,7 +155,7 @@ export default function CotizacionPrintPage() {
               .from('productos')
               .select('*')
               .eq('id_producto', item.producto_id)
-              .single();
+              .maybeSingle();
             producto = productoData;
           }
 
@@ -182,7 +186,7 @@ export default function CotizacionPrintPage() {
 
     } catch (error: any) {
       console.error('Error cargando cotización detallada:', error);
-      setError(error.message || 'Error al cargar la cotización');
+      setError(error.message || 'Error al cargar la cotización. Verifica que tengas permisos para ver esta cotización.');
     } finally {
       setLoading(false);
     }
@@ -220,11 +224,26 @@ export default function CotizacionPrintPage() {
     });
   };
 
+  // Helper: verificar si la cotización está aprobada (acepta ambos: 'aceptada' y 'aprobada')
+  const esCotizacionAprobada = (estado: string) => {
+    return estado === 'aceptada' || estado === 'aprobada';
+  };
+
+  // Determinar color del badge de estado
+  const getEstadoBadgeClass = (estado: string) => {
+    const e = estado.toLowerCase();
+    if (e === 'aceptada' || e === 'aprobada') return 'bg-emerald-100 text-emerald-800';
+    if (e === 'enviada') return 'bg-sky-100 text-sky-800';
+    if (e === 'rechazada') return 'bg-red-100 text-red-800';
+    if (e === 'vencida') return 'bg-orange-100 text-orange-800';
+    return 'bg-gray-100 text-gray-800';
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center print:hidden">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Preparando vista de impresión...</p>
         </div>
       </div>
@@ -234,16 +253,27 @@ export default function CotizacionPrintPage() {
   if (error || !cotizacion) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center print:hidden">
-        <div className="text-center">
-          <div className="text-red-500 text-6xl mb-4">⚠️</div>
+        <div className="text-center max-w-md px-4">
+          <div className="text-red-500 text-6xl mb-4">
+            <i className="ri-error-warning-line"></i>
+          </div>
           <h2 className="text-2xl font-bold text-gray-800 mb-2">Error al cargar</h2>
           <p className="text-gray-600 mb-4">{error || 'Cotización no encontrada'}</p>
-          <button
-            onClick={() => window.close()}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-          >
-            Cerrar
-          </button>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => id && cargarCotizacionDetallada(parseInt(id))}
+              className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 cursor-pointer"
+            >
+              <i className="ri-refresh-line mr-1"></i>
+              Reintentar
+            </button>
+            <button
+              onClick={() => window.close()}
+              className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 cursor-pointer"
+            >
+              Cerrar
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -403,14 +433,14 @@ export default function CotizacionPrintPage() {
       <div className="print-controls print-hidden">
         <button
           onClick={() => window.print()}
-          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 mr-2 flex items-center"
+          className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 mr-2 flex items-center cursor-pointer"
         >
           <i className="ri-printer-line mr-2"></i>
-          🖨️ Imprimir
+          Imprimir
         </button>
         <button
           onClick={() => window.close()}
-          className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
+          className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 cursor-pointer"
         >
           Cerrar
         </button>
@@ -465,11 +495,7 @@ export default function CotizacionPrintPage() {
                 <p><span className="font-medium">Fecha:</span> {formatearFecha(fechaCotizacion)}</p>
                 <p><span className="font-medium">Vencimiento:</span> {formatearFecha(cotizacion.fecha_vencimiento)}</p>
                 <p><span className="font-medium">Estado:</span> 
-                  <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${
-                    cotizacion.estado === 'Aprobada' || cotizacion.estado === 'aprobada' ? 'bg-green-100 text-green-800' :
-                    cotizacion.estado === 'Pendiente' || cotizacion.estado === 'pendiente' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-red-100 text-red-800'
-                  }`}>
+                  <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${getEstadoBadgeClass(cotizacion.estado)}`}>
                     {cotizacion.estado}
                   </span>
                 </p>
@@ -540,7 +566,7 @@ export default function CotizacionPrintPage() {
                               {item.bom_items && item.bom_items.length > 0 && (
                                 <tr className="bom-section">
                                   <td colSpan={8} className="p-0 border border-gray-300">
-                                    <div className="bom-block border-l-4 border-blue-200 bg-blue-50 px-6 py-4 ml-4 mr-2 my-2">
+                                    <div className="bom-block border-l-4 border-teal-200 bg-teal-50 px-6 py-4 ml-4 mr-2 my-2">
                                       <div className="text-sm font-semibold mb-3 text-gray-700">Ítems utilizados:</div>
                                       <div className="overflow-x-auto">
                                         <table className="w-full text-sm">

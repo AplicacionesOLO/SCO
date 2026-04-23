@@ -110,19 +110,35 @@ const routes: RouteObject[] = [
   },
   {
     path: '/cotizaciones/:id',
-    element: <CotizacionDetalladaPage />
+    element: (
+      <ProtectedRoute requireAuth permission="cotizaciones:view">
+        <CotizacionDetalladaPage />
+      </ProtectedRoute>
+    )
   },
   {
     path: '/cotizaciones/:id/detallada',
-    element: <CotizacionDetalladaPage />
+    element: (
+      <ProtectedRoute requireAuth permission="cotizaciones:view">
+        <CotizacionDetalladaPage />
+      </ProtectedRoute>
+    )
   },
   {
     path: '/cotizaciones/optimizador/:id',
-    element: <CotizacionOptimizadorPage />
+    element: (
+      <ProtectedRoute requireAuth permission="cotizaciones:view">
+        <CotizacionOptimizadorPage />
+      </ProtectedRoute>
+    )
   },
   {
     path: '/cotizaciones/print/:id',
-    element: <CotizacionPrintPage />
+    element: (
+      <ProtectedRoute requireAuth permission="cotizaciones:view">
+        <CotizacionPrintPage />
+      </ProtectedRoute>
+    )
   },
   {
     path: '/pedidos',

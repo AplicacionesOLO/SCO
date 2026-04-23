@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../../lib/supabase';
 import { pedidoService } from '../../../services/pedidoService';
 import NotificationPopup from '../../../components/base/NotificationPopup';
@@ -74,13 +74,29 @@ interface Cotizacion {
   cotizacion_items: CotizacionItem[];
 }
 
-const CotizacionDetallada: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
+interface CotizacionDetalladaProps {
+  cotizacionId?: number;
+}
+
+const CotizacionDetallada: React.FC<CotizacionDetalladaProps> = ({ cotizacionId }) => {
   const navigate = useNavigate();
   const [cotizacion, setCotizacion] = useState<Cotizacion | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<{ [key: number]: boolean }>({});
+
+  // Auto-expandir items con BOM cuando se carga la cotización
+  useEffect(() => {
+    if (cotizacion?.cotizacion_items) {
+      const expanded: { [key: number]: boolean } = {};
+      cotizacion.cotizacion_items.forEach((item: CotizacionItem) => {
+        if (item.bom_items && item.bom_items.length > 0) {
+          expanded[item.id] = true;
+        }
+      });
+      setExpandedItems(expanded);
+    }
+  }, [cotizacion]);
   const [creatingPedido, setCreatingPedido] = useState(false);
 
   // Notification state
@@ -103,10 +119,10 @@ const CotizacionDetallada: React.FC = () => {
   };
 
   useEffect(() => {
-    if (id) {
-      cargarCotizacionDetallada(parseInt(id));
+    if (cotizacionId) {
+      cargarCotizacionDetallada(cotizacionId);
     }
-  }, [id]);
+  }, [cotizacionId]);
 
   const toggleExpandItem = (itemId: number) => {
     setExpandedItems(prev => ({
@@ -125,9 +141,17 @@ const CotizacionDetallada: React.FC = () => {
         .from('cotizaciones')
         .select('*')
         .eq('id', cotizacionId)
-        .single();
+        .maybeSingle();
 
       if (cotizacionError) throw cotizacionError;
+      if (!cotizacionData) {
+        setError('Cotización no encontrada. Es posible que no exista o no tengas permisos para verla.');
+        setLoading(false);
+        return;
+      }
+
+      console.log('[CotizacionDetallada] Cotización cargada:', cotizacionData);
+      console.log('[CotizacionDetallada] Estado:', cotizacionData.estado);
 
       // 2. Cargar cliente - manejo más robusto
       let clienteData = null;
@@ -136,7 +160,7 @@ const CotizacionDetallada: React.FC = () => {
           .from('clientes')
           .select('*')
           .eq('id', cotizacionData.cliente_id)
-          .single();
+          .maybeSingle();
 
         if (!clienteError && cliente) {
           clienteData = cliente;
@@ -160,13 +184,26 @@ const CotizacionDetallada: React.FC = () => {
         .select('*')
         .eq('cotizacion_id', cotizacionId);
 
-      if (itemsError) throw itemsError;
+      if (itemsError) {
+        console.error('[CotizacionDetallada] Error cargando items:', itemsError);
+        throw itemsError;
+      }
+
+      console.log('[CotizacionDetallada] Items crudos de BD:', itemsData);
+      console.log('[CotizacionDetallada] Cantidad de items:', itemsData?.length || 0);
 
       // 4. Cargar productos para cada item (solo si tienen producto_id)
       const itemsConProductos = await Promise.all(
-        (itemsData || []).map(async (item) => {
+        (itemsData || []).map(async (item, idx) => {
           let producto = null;
           let bomItems: BOMItem[] = [];
+
+          console.log(`[CotizacionDetallada] Procesando item #${idx}:`, {
+            id: item.id,
+            producto_id: item.producto_id,
+            descripcion: item.descripcion,
+            cantidad: item.cantidad
+          });
 
           // Solo cargar producto y BOM si el item tiene producto_id
           if (item.producto_id) {
@@ -174,7 +211,7 @@ const CotizacionDetallada: React.FC = () => {
               .from('productos')
               .select('*')
               .eq('id_producto', item.producto_id)
-              .single();
+              .maybeSingle();
             producto = productoData;
 
             // 5. Cargar BOM items para cada producto
@@ -184,6 +221,8 @@ const CotizacionDetallada: React.FC = () => {
               .eq('product_id', item.producto_id);
             
             bomItems = bomData || [];
+          } else {
+            console.log(`[CotizacionDetallada] Item #${idx} no tiene producto_id, se muestra como ítem libre`);
           }
 
           return {
@@ -194,6 +233,8 @@ const CotizacionDetallada: React.FC = () => {
         })
       );
 
+      console.log('[CotizacionDetallada] Items procesados:', itemsConProductos);
+
       setCotizacion({
         ...cotizacionData,
         cliente: clienteData,
@@ -202,7 +243,7 @@ const CotizacionDetallada: React.FC = () => {
 
     } catch (error: any) {
       console.error('Error cargando cotización detallada:', error);
-      setError(error.message || 'Error al cargar la cotización');
+      setError(error.message || 'Error al cargar la cotización. Verifica que tengas permisos para ver esta cotización.');
     } finally {
       setLoading(false);
     }
@@ -256,13 +297,13 @@ const CotizacionDetallada: React.FC = () => {
     } catch (error) {
       console.error('Error al abrir ventana de impresión:', error);
       // Fallback: intentar con la ruta relativa
-      const fallbackUrl = `/cotizaciones/${id}/print`;
+      const fallbackUrl = `/cotizaciones/${cotizacionId}/print`;
       window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
     }
   };
 
   const handleCrearPedido = async () => {
-    if (!cotizacion || cotizacion.estado !== 'aprobada') {
+    if (!cotizacion || !esCotizacionAprobada(cotizacion.estado)) {
       showNotification('warning', 'Solo se pueden crear pedidos desde cotizaciones aprobadas');
       return;
     }
@@ -285,7 +326,7 @@ const CotizacionDetallada: React.FC = () => {
   };
 
   const handleFacturarDirecto = () => {
-    if (!cotizacion || cotizacion.estado !== 'aprobada') {
+    if (!cotizacion || !esCotizacionAprobada(cotizacion.estado)) {
       showNotification('warning', 'Solo se pueden facturar cotizaciones aprobadas');
       return;
     }
@@ -301,10 +342,15 @@ const CotizacionDetallada: React.FC = () => {
     });
   };
 
+  // Helper: verificar si la cotización está aprobada (acepta ambos: 'aceptada' y 'aprobada')
+  const esCotizacionAprobada = (estado: string) => {
+    return estado === 'aceptada' || estado === 'aprobada';
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
       </div>
     );
   }
@@ -317,9 +363,18 @@ const CotizacionDetallada: React.FC = () => {
             <i className="ri-error-warning-line text-red-400 text-xl"></i>
           </div>
           <div className="ml-3">
-            <h3 className="text-sm font-medium text-red-800">Error</h3>
+            <h3 className="text-sm font-medium text-red-800">Error al cargar la cotización</h3>
             <div className="mt-2 text-sm text-red-700">
               <p>{error}</p>
+            </div>
+            <div className="mt-4">
+              <button
+                onClick={() => cotizacionId && cargarCotizacionDetallada(cotizacionId)}
+                className="text-sm text-red-600 hover:text-red-800 font-medium cursor-pointer"
+              >
+                <i className="ri-refresh-line mr-1"></i>
+                Reintentar
+              </button>
             </div>
           </div>
         </div>
@@ -369,6 +424,16 @@ const CotizacionDetallada: React.FC = () => {
   const direccionCliente = cotizacion.cliente?.direccion || 'San José, Costa Rica';
 
   const monedaCotizacion = cotizacion.moneda || 'CRC';
+
+  // Determinar color del badge de estado
+  const getEstadoBadgeClass = (estado: string) => {
+    const e = estado.toLowerCase();
+    if (e === 'aceptada' || e === 'aprobada') return 'bg-emerald-100 text-emerald-800';
+    if (e === 'enviada') return 'bg-sky-100 text-sky-800';
+    if (e === 'rechazada') return 'bg-red-100 text-red-800';
+    if (e === 'vencida') return 'bg-orange-100 text-orange-800';
+    return 'bg-gray-100 text-gray-800';
+  };
 
   return (
     <div className="max-w-6xl mx-auto p-6 bg-white">
@@ -427,11 +492,7 @@ const CotizacionDetallada: React.FC = () => {
             <p><span className="font-medium">Fecha:</span> {formatearFecha(fechaCotizacion)}</p>
             <p><span className="font-medium">Vencimiento:</span> {formatearFecha(cotizacion.fecha_vencimiento)}</p>
             <p><span className="font-medium">Estado:</span> 
-              <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${
-                cotizacion.estado === 'Aprobada' || cotizacion.estado === 'aprobada' ? 'bg-green-100 text-green-800' :
-                cotizacion.estado === 'Pendiente' || cotizacion.estado === 'pendiente' ? 'bg-yellow-100 text-yellow-800' :
-                'bg-red-100 text-red-800'
-              }`}>
+              <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${getEstadoBadgeClass(cotizacion.estado)}`}>
                 {cotizacion.estado}
               </span>
             </p>
@@ -452,6 +513,41 @@ const CotizacionDetallada: React.FC = () => {
       {/* Tabla de Productos */}
       <div className="mb-8">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Productos Cotizados</h3>
+        
+        {/* Mensaje cuando no hay items */}
+        {cotizacion.cotizacion_items.length === 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-6 mb-4">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0">
+                <i className="ri-error-warning-line text-amber-500 text-xl"></i>
+              </div>
+              <div className="flex-1">
+                <h4 className="text-sm font-medium text-amber-800">Esta cotización no tiene productos</h4>
+                <p className="text-sm text-amber-700 mt-1">
+                  La cotización está en estado <strong>"{cotizacion.estado}"</strong> pero no se encontraron líneas de productos.
+                  Esto puede deberse a un problema de permisos (RLS) o a que los items fueron eliminados.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => cotizacionId && cargarCotizacionDetallada(cotizacionId)}
+                    className="text-sm px-3 py-1.5 bg-amber-100 text-amber-800 rounded hover:bg-amber-200 transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <i className="ri-refresh-line"></i>
+                    Reintentar carga
+                  </button>
+                  <button
+                    onClick={() => navigate('/cotizaciones')}
+                    className="text-sm px-3 py-1.5 text-amber-700 hover:text-amber-900 transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <i className="ri-arrow-left-line"></i>
+                    Volver a cotizaciones
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
         <div className="overflow-x-auto">
           <table className="w-full border-collapse border border-gray-300">
             <thead className="bg-gray-100">
@@ -480,7 +576,7 @@ const CotizacionDetallada: React.FC = () => {
                         {item.bom_items && item.bom_items.length > 0 && (
                           <button
                             type="button"
-                            className="ml-2 text-sm text-blue-600 hover:text-blue-800 print:hidden transition-colors duration-200 flex items-center gap-1"
+                            className="ml-2 text-sm text-teal-600 hover:text-teal-800 print:hidden transition-colors duration-200 flex items-center gap-1 cursor-pointer"
                             aria-expanded={!!expandedItems[item.id]}
                             title="Ver componentes"
                             onClick={() => toggleExpandItem(item.id)}
@@ -515,7 +611,7 @@ const CotizacionDetallada: React.FC = () => {
                   {(expandedItems[item.id] || typeof window === 'undefined') && item.bom_items && item.bom_items.length > 0 && (
                     <tr className="print:table-row">
                       <td colSpan={8} className="p-0 border border-gray-300">
-                        <div className="bom-block border-l-4 border-blue-200 bg-blue-50 px-6 py-4 ml-4 mr-2 my-2">
+                        <div className="bom-block border-l-4 border-teal-200 bg-teal-50 px-6 py-4 ml-4 mr-2 my-2">
                           <div className="text-sm font-semibold mb-3 text-gray-700">Ítems utilizados:</div>
                           <div className="overflow-x-auto">
                             <table className="w-full text-sm">
@@ -632,19 +728,40 @@ const CotizacionDetallada: React.FC = () => {
       <div className="flex justify-between items-center mt-8 print:hidden">
         <button
           onClick={() => navigate('/cotizaciones')}
-          className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors duration-200 flex items-center gap-2"
+          className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors duration-200 flex items-center gap-2 cursor-pointer"
         >
           <i className="ri-arrow-left-line"></i>
           Volver a Cotizaciones
         </button>
         
-        <button
-          onClick={handleImprimir}
-          className="w-12 h-12 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-full hover:from-orange-600 hover:to-orange-700 transition-all duration-200 flex items-center justify-center shadow-lg hover:shadow-xl transform hover:scale-105"
-          title="Imprimir cotización"
-        >
-          <i className="ri-printer-line text-xl"></i>
-        </button>
+        <div className="flex items-center gap-3">
+          {esCotizacionAprobada(cotizacion.estado) && (
+            <>
+              <button
+                onClick={handleCrearPedido}
+                disabled={creatingPedido}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <i className="ri-shopping-cart-line"></i>
+                {creatingPedido ? 'Creando...' : 'Crear Pedido'}
+              </button>
+              <button
+                onClick={handleFacturarDirecto}
+                className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors flex items-center gap-2 cursor-pointer"
+              >
+                <i className="ri-bill-line"></i>
+                Facturar
+              </button>
+            </>
+          )}
+          <button
+            onClick={handleImprimir}
+            className="w-12 h-12 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-full hover:from-orange-600 hover:to-orange-700 transition-all duration-200 flex items-center justify-center shadow-lg hover:shadow-xl transform hover:scale-105 cursor-pointer"
+            title="Imprimir cotización"
+          >
+            <i className="ri-printer-line text-xl"></i>
+          </button>
+        </div>
       </div>
     </div>
   );

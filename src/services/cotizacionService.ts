@@ -34,18 +34,16 @@ class CotizacionService {
    */
   static async obtenerTipoCambioBCCR(): Promise<number> {
     try {
-      try {
-        const response = await fetch('https://gee.bccr.fi.cr/indicadoreseconomicos/Cuadros/frmVerCatCuadro.aspx?idioma=1&CodCuadro=%20400');
-        if (response.ok) {
-          return 540.00;
-        }
-      } catch {
-        // use default
+      // Intentar obtener tipo de cambio real vía Edge Function (evita CORS)
+      const { data, error } = await supabase.functions.invoke('tipo-cambio-bccr');
+      if (!error && data?.tipoCambio && typeof data.tipoCambio === 'number') {
+        return data.tipoCambio;
       }
-      return 540.00;
     } catch {
-      return 540.00;
+      // fallback
     }
+    // Valor de referencia si no está disponible el servicio
+    return 540.00;
   }
 
   /**
@@ -139,29 +137,62 @@ class CotizacionService {
 
       if (error) throw error;
 
-      // Actualizar items si se proporcionan
-      if (cotizacionData.items && cotizacionData.items.length > 0) {
-        // Eliminar items existentes
-        await supabase
-          .from('cotizacion_items')
-          .delete()
-          .eq('cotizacion_id', id);
+      // Actualizar items solo si se proporcionan explícitamente
+      // Si items es undefined/null, NO tocamos los items existentes
+      if (cotizacionData.items !== undefined && cotizacionData.items !== null) {
+        if (cotizacionData.items.length > 0) {
+          // ✅ RESPALDO: Guardar items existentes antes de borrar
+          const { data: itemsRespaldo } = await supabase
+            .from('cotizacion_items')
+            .select('*')
+            .eq('cotizacion_id', id);
 
-        // Insertar nuevos items
-        const items = cotizacionData.items.map((item: any) => ({
-          cotizacion_id: id,
-          producto_id: item.producto_id,
-          tipo_item: item.tipo_item || 'normal',
-          descripcion: item.descripcion,
-          cantidad: this.formatNumericValue(item.cantidad, 'quantity'),
-          precio_unitario: this.formatNumericValue(item.precio_unitario, 'quantity'),
-          descuento: this.formatNumericValue(item.descuento || 0, 'item_discount'),
-          subtotal: this.formatNumericValue(item.subtotal, 'quantity')
-        }));
+          // Eliminar items existentes
+          await supabase
+            .from('cotizacion_items')
+            .delete()
+            .eq('cotizacion_id', id);
 
-        await supabase
-          .from('cotizacion_items')
-          .insert(items);
+          // Preparar nuevos items con TODOS los campos necesarios
+          const items = cotizacionData.items.map((item: any) => ({
+            cotizacion_id: id,
+            producto_id: item.producto_id || null,
+            tipo_item: item.tipo_item || 'normal',
+            // ✅ descripcion nunca llega undefined
+            descripcion: item.descripcion || item.producto_info?.descripcion_producto || `Producto`,
+            dimensiones: item.dimensiones || null,
+            material: item.material || null,
+            tapacantos: item.tapacantos || null,
+            cnc1: item.cnc1 || null,
+            cnc2: item.cnc2 || null,
+            datos_optimizador: item.datos_optimizador || null,
+            cantidad: this.formatNumericValue(item.cantidad, 'quantity'),
+            precio_unitario: this.formatNumericValue(item.precio_unitario, 'quantity'),
+            descuento: this.formatNumericValue(item.descuento || 0, 'item_discount'),
+            subtotal: this.formatNumericValue(item.subtotal, 'quantity')
+          }));
+
+          // ✅ Insertar con verificación de error
+          const { error: insertError } = await supabase
+            .from('cotizacion_items')
+            .insert(items);
+
+          // ✅ Si falla la inserción, RESTAURAR los items del respaldo
+          if (insertError) {
+            console.error('[actualizarCotizacion] Error insertando items nuevos:', insertError);
+            if (itemsRespaldo && itemsRespaldo.length > 0) {
+              const respaldoSinId = itemsRespaldo.map(({ id: _id, ...rest }: any) => rest);
+              await supabase.from('cotizacion_items').insert(respaldoSinId);
+            }
+            throw new Error(`Error al actualizar los items de la cotización: ${insertError.message}`);
+          }
+        } else {
+          // Si se pasa un array vacío explícitamente, sí borramos los items
+          await supabase
+            .from('cotizacion_items')
+            .delete()
+            .eq('cotizacion_id', id);
+        }
       }
 
       return data;

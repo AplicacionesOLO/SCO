@@ -31,7 +31,7 @@ export default function CrearArticuloModal({ nombreInicial, onCreado, onCerrar }
   const cargarDatos = async () => {
     if (!currentStore?.id) return;
     const [categoriasRes, unidadesRes] = await Promise.all([
-      supabase.from('categorias').select('*').eq('tienda_id', currentStore.id).order('nombre'),
+      supabase.from('categorias_inventario').select('*').eq('tienda_id', currentStore.id).order('nombre_categoria'),
       supabase.from('unidades_medida').select('*').eq('tienda_id', currentStore.id).order('nombre')
     ]);
     setCategorias(categoriasRes.data || []);
@@ -78,9 +78,9 @@ export default function CrearArticuloModal({ nombreInicial, onCreado, onCerrar }
     // Verificar unicidad del código
     const { data: existente } = await supabase
       .from('inventario')
-      .select('id')
+      .select('id_articulo')
       .ilike('codigo_articulo', formData.codigo_articulo.trim())
-      .single();
+      .maybeSingle();
 
     if (existente) {
       setError('Ya existe un artículo con este código');
@@ -108,7 +108,8 @@ export default function CrearArticuloModal({ nombreInicial, onCreado, onCerrar }
         costo_articulo: costo,
         ganancia_articulo: ganancia,
         categoria_id: parseInt(formData.categoria_id),
-        unidad_base_id: parseInt(formData.unidad_base_id)
+        unidad_base_id: parseInt(formData.unidad_base_id),
+        tienda_id: currentStore.id
       };
 
       const { data, error } = await supabase
@@ -116,10 +117,10 @@ export default function CrearArticuloModal({ nombreInicial, onCreado, onCerrar }
         .insert(datosArticulo)
         .select(`
           *,
-          categoria:categorias(nombre),
+          categoria:categorias_inventario(nombre_categoria),
           unidad:unidades_medida(nombre, simbolo)
         `)
-        .single();
+        .maybeSingle();
       
       if (error) throw error;
       
@@ -205,7 +206,7 @@ export default function CrearArticuloModal({ nombreInicial, onCreado, onCerrar }
               >
                 <option value="">Seleccionar categoría</option>
                 {categorias.map(cat => (
-                  <option key={cat.id} value={cat.id}>{cat.nombre}</option>
+                  <option key={cat.id_categoria} value={cat.id_categoria}>{cat.nombre_categoria}</option>
                 ))}
               </select>
             </div>

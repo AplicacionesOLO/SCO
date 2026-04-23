@@ -175,33 +175,36 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
     }
   };
 
-  const generarCodigoProducto = async () => {
+  const generarCodigoProducto = async (): Promise<string> => {
     try {
-      // Intentar hasta 10 veces para encontrar un código único
-      for (let intento = 0; intento < 10; intento++) {
-        const { data } = await supabase
-          .from('productos')
-          .select('codigo_producto')
-          .like('codigo_producto', 'PROD-%')
-          .order('codigo_producto', { ascending: false })
-          .limit(1);
+      const { data } = await supabase
+        .from('productos')
+        .select('codigo_producto')
+        .like('codigo_producto', 'PROD-%')
+        .order('codigo_producto', { ascending: false })
+        .limit(1);
 
-        let siguienteNumero = 1;
-        
-        if (data && data.length > 0 && data[0].codigo_producto) {
-          const ultimoCodigo = data[0].codigo_producto;
-          const match = ultimoCodigo.match(/PROD-(\d+)/);
-          if (match) {
-            const numero = parseInt(match[1]);
-            if (!isNaN(numero)) {
-              siguienteNumero = numero + 1 + intento; // Sumar intento para evitar colisiones
-            }
+      let siguienteNumero = 1;
+      
+      if (data && data.length > 0 && data[0].codigo_producto) {
+        const ultimoCodigo = data[0].codigo_producto;
+        const match = ultimoCodigo.match(/PROD-(\d+)/);
+        if (match) {
+          const numero = parseInt(match[1]);
+          if (!isNaN(numero)) {
+            siguienteNumero = numero + 1;
           }
         }
+      }
 
-        const codigoGenerado = `PROD-${siguienteNumero.toString().padStart(3, '0')}`;
+      // Verificar que el código no exista antes de asignarlo
+      let codigoUnico = false;
+      let intentos = 0;
+      let codigoGenerado = '';
+
+      while (!codigoUnico && intentos < 100) {
+        codigoGenerado = `PROD-${(siguienteNumero + intentos).toString().padStart(3, '0')}`;
         
-        // Verificar que no exista
         const { data: existente } = await supabase
           .from('productos')
           .select('id_producto')
@@ -209,26 +212,19 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
           .maybeSingle();
 
         if (!existente) {
-          // Código único encontrado
-          setFormData(prev => ({
-            ...prev,
-            codigo_producto: codigoGenerado
-          }));
-          return codigoGenerado;
+          codigoUnico = true;
+        } else {
+          intentos++;
         }
       }
 
-      // Si después de 10 intentos no se encuentra, usar timestamp
-      const timestamp = Date.now().toString().slice(-6);
-      const codigoFallback = `PROD-${timestamp}`;
       setFormData(prev => ({
         ...prev,
-        codigo_producto: codigoFallback
+        codigo_producto: codigoGenerado
       }));
-      return codigoFallback;
+      return codigoGenerado;
     } catch (error) {
       console.error('Error generando código de producto:', error);
-      // Fallback con timestamp para garantizar unicidad
       const timestamp = Date.now().toString().slice(-6);
       const codigoFallback = `PROD-${timestamp}`;
       setFormData(prev => ({
@@ -443,23 +439,37 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         return;
       }
 
+      let codigoProducto = formData.codigo_producto;
+
       // Verificación final antes de guardar (solo para productos nuevos)
       if (!productoEditar) {
         const { data: existingProduct } = await supabase
           .from('productos')
           .select('id_producto')
-          .eq('codigo_producto', formData.codigo_producto)
+          .eq('codigo_producto', codigoProducto)
           .maybeSingle();
 
         if (existingProduct) {
-          // Si existe, generar un nuevo código y reintentar
+          // Si existe, generar un nuevo código único y usarlo directamente
           setError('El código ya está en uso. Generando uno nuevo...');
-          const nuevoCodigo = await generarCodigoProducto();
+          codigoProducto = await generarCodigoProducto();
           
-          // Esperar un momento para que el usuario vea el nuevo código
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Esperar a que React actualice el estado
+          await new Promise(resolve => setTimeout(resolve, 100));
           
-          // Reintentar el guardado con el nuevo código
+          // Verificar nuevamente que el nuevo código sea único
+          const { data: stillExists } = await supabase
+            .from('productos')
+            .select('id_producto')
+            .eq('codigo_producto', codigoProducto)
+            .maybeSingle();
+
+          if (stillExists) {
+            // Si aún existe, usar timestamp como fallback definitivo
+            codigoProducto = `PROD-${Date.now().toString().slice(-6)}`;
+            setFormData(prev => ({ ...prev, codigo_producto: codigoProducto }));
+          }
+          
           setError('');
         }
       }
@@ -496,7 +506,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         const { data, error } = await supabase
           .from('productos')
           .insert({
-            codigo_producto: formData.codigo_producto,
+            codigo_producto: codigoProducto,
             descripcion_producto: formData.descripcion_producto,
             categoria_id: parseInt(formData.categoria_id),
             codigo_sistema: formData.codigo_sistema,
@@ -538,14 +548,8 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
       // Manejo específico de errores
       if (error?.code === '23505') {
         if (error?.message?.includes('productos_codigo_producto_key')) {
-          // Generar automáticamente un nuevo código
-          setError('El código ya está en uso. Generando uno nuevo automáticamente...');
+          setError('El código de producto ya está en uso. Por favor, genera uno nuevo y vuelve a intentar.');
           await generarCodigoProducto();
-          
-          // Mostrar mensaje al usuario
-          setTimeout(() => {
-            setError('Se ha generado un nuevo código. Por favor, intenta guardar nuevamente.');
-          }, 1000);
         } else if (error?.message?.includes('productos_codigo_sistema_key')) {
           setError('El código de sistema ya está en uso. Por favor, genera uno nuevo.');
           await generarCodigoSistema();

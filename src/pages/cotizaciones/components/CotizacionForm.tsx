@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { CotizacionFormData, CotizacionItem } from '../../../types/cotizacion';
-import { formatCurrency, formatNumber, parseCurrency } from '../../../lib/currency';
+import { formatCurrency, formatNumber, parseCurrency, getCurrencySymbol, formatCurrencyWithSymbol } from '../../../lib/currency';
 import { CotizacionService } from '../../../services/cotizacionService';
 import { showAlert } from '../../../utils/dialog';
 
@@ -17,6 +17,7 @@ interface Producto {
   codigo_producto: string;
   descripcion_producto: string;
   costo_total_bom: number;
+  moneda: string;
 }
 
 interface CotizacionFormProps {
@@ -149,13 +150,32 @@ export function CotizacionForm({ cotizacion, onSubmit, onCancel, isOpen }: Cotiz
         
         // Si hay productos, cargar su información por separado
         if (productosIds.length > 0) {
-          const { data: productos, error: productosError } = await supabase
-            .from('productos')
-            .select('id_producto, codigo_producto, descripcion_producto, costo_total_bom')
-            .in('id_producto', productosIds);
+          let productos: any[] | null = null;
+          let productosError: any = null;
+
+          // Intentar con columna moneda
+          try {
+            const result = await supabase
+              .from('productos')
+              .select('id_producto, codigo_producto, descripcion_producto, costo_total_bom, moneda')
+              .in('id_producto', productosIds);
+            productos = result.data;
+            productosError = result.error;
+          } catch (e) {
+            // Fallback sin columna moneda
+            const result = await supabase
+              .from('productos')
+              .select('id_producto, codigo_producto, descripcion_producto, costo_total_bom')
+              .in('id_producto', productosIds);
+            productos = result.data;
+            productosError = result.error;
+          }
 
           if (!productosError && productos) {
-            productosInfo = productos;
+            productosInfo = productos.map(p => ({
+              ...p,
+              moneda: (p as any).moneda || 'CRC'
+            }));
           }
         }
 
@@ -174,7 +194,8 @@ export function CotizacionForm({ cotizacion, onSubmit, onCancel, isOpen }: Cotiz
             producto_info: productoInfo || {
               codigo_producto: 'N/A',
               descripcion_producto: item.descripcion || `Producto ID: ${item.producto_id}`,
-              costo_total_bom: item.precio_unitario || 0
+              costo_total_bom: item.precio_unitario || 0,
+              moneda: 'CRC'
             }
           };
         });
@@ -211,13 +232,34 @@ export function CotizacionForm({ cotizacion, onSubmit, onCancel, isOpen }: Cotiz
 
   const cargarProductos = async () => {
     try {
-      const { data, error } = await supabase
-        .from('productos')
-        .select('id_producto, codigo_producto, descripcion_producto, costo_total_bom')
-        .order('descripcion_producto');
+      let data: Producto[] | null = null;
+      let error: any = null;
+
+      // Intentar con la columna moneda (nueva versión)
+      try {
+        const result = await supabase
+          .from('productos')
+          .select('id_producto, codigo_producto, descripcion_producto, costo_total_bom, moneda')
+          .order('descripcion_producto');
+        data = result.data;
+        error = result.error;
+      } catch (e) {
+        // Si falla, intentar sin la columna moneda (versión legacy)
+        const result = await supabase
+          .from('productos')
+          .select('id_producto, codigo_producto, descripcion_producto, costo_total_bom')
+          .order('descripcion_producto');
+        data = result.data;
+        error = result.error;
+      }
 
       if (error) throw error;
-      setProductos(data || []);
+      // Asegurar que cada producto tenga moneda por defecto
+      const productosConMoneda = (data || []).map(p => ({
+        ...p,
+        moneda: (p as any).moneda || 'CRC'
+      }));
+      setProductos(productosConMoneda);
     } catch (error) {
       console.error('Error cargando productos:', error);
     }
@@ -290,13 +332,27 @@ export function CotizacionForm({ cotizacion, onSubmit, onCancel, isOpen }: Cotiz
     setMostrarListaProductos(filtrados.length > 0);
   };
 
+  const convertirPrecio = (precio: number, monedaProducto: string): number => {
+    const monedaCotizacion = formData.moneda;
+    if (monedaProducto === monedaCotizacion) return precio;
+    if (monedaProducto === 'USD' && monedaCotizacion === 'CRC') {
+      return precio * (formData.tipo_cambio || 520);
+    }
+    if (monedaProducto === 'CRC' && monedaCotizacion === 'USD') {
+      return precio / (formData.tipo_cambio || 520);
+    }
+    return precio;
+  };
+
   const agregarProducto = (producto: Producto) => {
+    const monedaProducto = producto.moneda || 'CRC';
+    const precioConvertido = convertirPrecio(producto.costo_total_bom || 0, monedaProducto);
     const nuevoItem: CotizacionItem = {
       producto_id: producto.id_producto,
       cantidad: 1,
-      precio_unitario: producto.costo_total_bom || 0,
+      precio_unitario: precioConvertido,
       descuento: 0,
-      subtotal: producto.costo_total_bom || 0
+      subtotal: precioConvertido
     };
 
     const nuevosItems = [...formData.items, nuevoItem];
@@ -590,18 +646,39 @@ export function CotizacionForm({ cotizacion, onSubmit, onCancel, isOpen }: Cotiz
                 
                 {mostrarListaProductos && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                    {productosFiltrados.map((producto) => (
-                      <div
-                        key={producto.id_producto}
-                        onClick={() => agregarProducto(producto)}
-                        className="px-3 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
-                      >
-                        <div className="font-medium">{producto.descripcion_producto}</div>
-                        <div className="text-sm text-gray-500">
-                          Código: {producto.codigo_producto} | Precio: ₡{formatNumber(producto.costo_total_bom)}
+                    {productosFiltrados.map((producto) => {
+                      const monedaProducto = producto.moneda || 'CRC';
+                      const simbolo = getCurrencySymbol(monedaProducto);
+                      const hayConversion = monedaProducto !== formData.moneda;
+                      const precioConvertido = convertirPrecio(producto.costo_total_bom || 0, monedaProducto);
+                      return (
+                        <div
+                          key={producto.id_producto}
+                          onClick={() => agregarProducto(producto)}
+                          className="px-3 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-sm">{producto.descripcion_producto}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                              monedaProducto === 'USD'
+                                ? 'bg-amber-100 text-amber-700'
+                                : 'bg-emerald-100 text-emerald-700'
+                            }`}>
+                              {monedaProducto}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            Código: {producto.codigo_producto} &nbsp;|
+                            &nbsp;Precio original: {simbolo}{formatNumber(producto.costo_total_bom || 0)}
+                            {hayConversion && (
+                              <span className="ml-1 text-orange-600 font-medium">
+                                &rarr; {getCurrencySymbol(formData.moneda)}{formatNumber(precioConvertido)} ({formData.moneda})
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -682,7 +759,7 @@ export function CotizacionForm({ cotizacion, onSubmit, onCancel, isOpen }: Cotiz
                               />
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              ₡{formatNumber(item.subtotal || 0)}
+                              {getCurrencySymbol(formData.moneda)}{formatNumber(item.subtotal || 0)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <button
@@ -759,29 +836,39 @@ export function CotizacionForm({ cotizacion, onSubmit, onCancel, isOpen }: Cotiz
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Resumen</h3>
                 <div className="space-y-2">
+                  <div className="flex items-center justify-between mb-3 pb-2 border-b">
+                    <span className="text-xs text-gray-500">Moneda de la cotización:</span>
+                    <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                      formData.moneda === 'USD'
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-emerald-100 text-emerald-700'
+                    }`}>
+                      {formData.moneda === 'USD' ? '$ Dólares (USD)' : '₡ Colones (CRC)'}
+                    </span>
+                  </div>
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
-                    <span>₡{formatNumber(formData.subtotal)}</span>
+                    <span>{getCurrencySymbol(formData.moneda)}{formatNumber(formData.subtotal)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Descuento ({formData.descuento_global}%):</span>
-                    <span>-₡{formatNumber(formData.descuento_valor)}</span>
+                    <span>-{getCurrencySymbol(formData.moneda)}{formatNumber(formData.descuento_valor)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Impuestos (13%):</span>
-                    <span>₡{formatNumber(formData.impuestos)}</span>
+                    <span>{getCurrencySymbol(formData.moneda)}{formatNumber(formData.impuestos)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Flete:</span>
-                    <span>₡{formatNumber(formData.flete)}</span>
+                    <span>{getCurrencySymbol(formData.moneda)}{formatNumber(formData.flete)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Otros:</span>
-                    <span>₡{formatNumber(formData.otros)}</span>
+                    <span>{getCurrencySymbol(formData.moneda)}{formatNumber(formData.otros)}</span>
                   </div>
                   <div className="border-t pt-2 flex justify-between font-bold text-lg">
                     <span>Total:</span>
-                    <span>₡{formatNumber(formData.total)}</span>
+                    <span>{getCurrencySymbol(formData.moneda)}{formatNumber(formData.total)}</span>
                   </div>
                 </div>
               </div>

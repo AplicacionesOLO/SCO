@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
 import { formatCurrency } from '../../../lib/currency';
+import { showSuccess, showError } from '../../../utils/dialog';
 import BuscarArticuloModal from './BuscarArticuloModal';
 import BOMTable from './BOMTable';
 
 interface Producto {
   id_producto?: number;
   codigo_producto: string;
-  descripcion: string; // Cambiado de descripcion_producto a descripcion
+  descripcion: string;
   categoria_id: number;
   codigo_sistema?: string;
   activo?: boolean;
@@ -34,7 +35,6 @@ interface Props {
 }
 
 export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) {
-  // Alias para compatibilidad con el código modificado
   const productoEditar = producto;
   const onSuccess = onGuardar;
   const onClose = onCerrar;
@@ -44,7 +44,8 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
     codigo_producto: '',
     descripcion_producto: '',
     categoria_id: '',
-    codigo_sistema: ''
+    codigo_sistema: '',
+    moneda: 'CRC'
   });
 
   const [categorias, setCategorias] = useState<any[]>([]);
@@ -64,15 +65,13 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         codigo_producto: productoEditar.codigo_producto || '',
         descripcion_producto: (productoEditar as any).descripcion_producto || '',
         categoria_id: productoEditar.categoria_id?.toString() || '',
-        codigo_sistema: productoEditar.codigo_sistema || ''
+        codigo_sistema: productoEditar.codigo_sistema || '',
+        moneda: (productoEditar as any).moneda || 'CRC'
       });
-      
-      // Cargar componentes BOM del producto
       cargarBOMItems(productoEditar.id_producto!);
     } else {
-      // Al crear nuevo producto, generar código automáticamente
       generarCodigoProducto();
-      setBomItems([]); // Limpiar componentes para nuevo producto
+      setBomItems([]);
     }
   }, [productoEditar]);
 
@@ -92,7 +91,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         .from('usuario_tienda_actual')
         .select('tienda_id')
         .eq('usuario_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.error('Error obteniendo tienda actual:', error);
@@ -105,27 +104,41 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
       } else {
         setError('No tienes una tienda seleccionada. Por favor, selecciona una tienda.');
       }
-    } catch (error) {
-      console.error('Error cargando tienda actual:', error);
+    } catch (err) {
+      console.error('Error cargando tienda actual:', err);
       setError('Error al cargar la tienda actual');
     }
   };
 
   const cargarCategorias = async () => {
-    if (!currentStore?.id) return;
-    const { data } = await supabase
-      .from('categorias')
-      .select('*')
-      .eq('tienda_id', currentStore.id)
-      .order('nombre');
-    setCategorias(data || []);
+    try {
+      if (!currentStore?.id) return;
+      const { data, error } = await supabase
+        .from('categorias')
+        .select('*')
+        .eq('tienda_id', currentStore.id)
+        .order('nombre');
+
+      if (error) {
+        console.error('Error cargando categorias:', error);
+        return;
+      }
+      setCategorias(data || []);
+    } catch (err) {
+      console.error('Error cargando categorias:', err);
+    }
   };
 
   const generarCodigoSistema = async () => {
+    if (!tiendaActual) {
+      setError('No hay tienda seleccionada para generar el código');
+      return;
+    }
     try {
       const { data } = await supabase
         .from('productos')
         .select('codigo_sistema')
+        .eq('tienda_id', tiendaActual)
         .not('codigo_sistema', 'is', null)
         .order('codigo_sistema', { ascending: false })
         .limit(1);
@@ -140,7 +153,6 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         }
       }
 
-      // Verificar que el código de sistema no exista
       let codigoUnico = false;
       let intentos = 0;
       let codigoGenerado = '';
@@ -151,6 +163,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         const { data: existente } = await supabase
           .from('productos')
           .select('id_producto')
+          .eq('tienda_id', tiendaActual)
           .eq('codigo_sistema', codigoGenerado)
           .maybeSingle();
 
@@ -161,25 +174,23 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         }
       }
 
-      setFormData(prev => ({
-        ...prev,
-        codigo_sistema: codigoGenerado
-      }));
-    } catch (error) {
-      console.error('Error generando código de sistema:', error);
-      // Fallback con timestamp
-      setFormData(prev => ({
-        ...prev,
-        codigo_sistema: Date.now().toString().slice(-6)
-      }));
+      setFormData(prev => ({ ...prev, codigo_sistema: codigoGenerado }));
+    } catch (err) {
+      console.error('Error generando código de sistema:', err);
+      setFormData(prev => ({ ...prev, codigo_sistema: Date.now().toString().slice(-6) }));
     }
   };
 
   const generarCodigoProducto = async (): Promise<string> => {
+    if (!tiendaActual) {
+      setError('No hay tienda seleccionada para generar el código');
+      return '';
+    }
     try {
       const { data } = await supabase
         .from('productos')
         .select('codigo_producto')
+        .eq('tienda_id', tiendaActual)
         .like('codigo_producto', 'PROD-%')
         .order('codigo_producto', { ascending: false })
         .limit(1);
@@ -197,7 +208,6 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         }
       }
 
-      // Verificar que el código no exista antes de asignarlo
       let codigoUnico = false;
       let intentos = 0;
       let codigoGenerado = '';
@@ -208,6 +218,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         const { data: existente } = await supabase
           .from('productos')
           .select('id_producto')
+          .eq('tienda_id', tiendaActual)
           .eq('codigo_producto', codigoGenerado)
           .maybeSingle();
 
@@ -218,19 +229,13 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         }
       }
 
-      setFormData(prev => ({
-        ...prev,
-        codigo_producto: codigoGenerado
-      }));
+      setFormData(prev => ({ ...prev, codigo_producto: codigoGenerado }));
       return codigoGenerado;
-    } catch (error) {
-      console.error('Error generando código de producto:', error);
+    } catch (err) {
+      console.error('Error generando código de producto:', err);
       const timestamp = Date.now().toString().slice(-6);
       const codigoFallback = `PROD-${timestamp}`;
-      setFormData(prev => ({
-        ...prev,
-        codigo_producto: codigoFallback
-      }));
+      setFormData(prev => ({ ...prev, codigo_producto: codigoFallback }));
       return codigoFallback;
     }
   };
@@ -241,7 +246,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         .from('bom_items')
         .select(`
           *,
-          inventario:inventario!id_componente(descripcion_articulo, categoria:categorias(nombre)),
+          inventario:inventario!id_componente(descripcion_articulo, categoria:categorias_inventario(nombre_categoria)),
           unidad_medida:unidades_medida!unidad_id(nombre, simbolo)
         `)
         .eq('product_id', productoId);
@@ -260,14 +265,14 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
           unidad_id: item.unidad_id,
           precio_unitario_base: item.precio_unitario_base,
           precio_ajustado: item.precio_ajustado,
-          categoria_nombre: item.inventario?.categoria?.nombre,
+          categoria_nombre: item.inventario?.categoria?.nombre_categoria,
           unidad_nombre: item.unidad_medida?.nombre,
           unidad_simbolo: item.unidad_medida?.simbolo
         }));
         setBomItems(items);
       }
-    } catch (error) {
-      console.error('Error cargando componentes BOM:', error);
+    } catch (err) {
+      console.error('Error cargando componentes BOM:', err);
     }
   };
 
@@ -276,7 +281,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
     setCostoTotal(total);
   };
 
-  const validarFormulario = async () => {
+  const validarFormulario = async (): Promise<boolean> => {
     setError('');
     
     if (!formData.codigo_producto.trim()) {
@@ -294,137 +299,92 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
       return false;
     }
 
-    // Validar unicidad del código de producto
+    if (!tiendaActual) {
+      setError('No hay tienda seleccionada. No se puede guardar el producto.');
+      return false;
+    }
+
+    // Validar unicidad del código de producto SOLO dentro de la tienda actual
     if (!productoEditar || formData.codigo_producto !== productoEditar.codigo_producto) {
       try {
-        const { data: existente } = await supabase
+        const { data: existente, error: errCheck } = await supabase
           .from('productos')
           .select('id_producto')
+          .eq('tienda_id', tiendaActual)
           .eq('codigo_producto', formData.codigo_producto)
           .maybeSingle();
 
+        if (errCheck) {
+          console.error('Error validando código de producto:', errCheck);
+          setError('Error al validar el código del producto. Intenta nuevamente.');
+          return false;
+        }
+
         if (existente && (!productoEditar || existente.id_producto !== productoEditar.id_producto)) {
-          setError('El código de producto ya existe. Generando uno nuevo...');
+          setError('El código de producto ya existe en esta tienda. Generando uno nuevo...');
           await generarCodigoProducto();
           return false;
         }
-      } catch (error) {
-        console.error('Error validando código:', error);
+      } catch (err) {
+        console.error('Error validando código:', err);
+        setError('Error al validar el código del producto. Intenta nuevamente.');
+        return false;
       }
     }
 
-    // Validar unicidad del código de sistema
+    // Validar unicidad del código de sistema SOLO dentro de la tienda actual
     if (formData.codigo_sistema) {
       try {
-        const { data: existente } = await supabase
+        const { data: existente, error: errCheck } = await supabase
           .from('productos')
           .select('id_producto')
+          .eq('tienda_id', tiendaActual)
           .eq('codigo_sistema', formData.codigo_sistema)
           .maybeSingle();
 
+        if (errCheck) {
+          console.error('Error validando código de sistema:', errCheck);
+          setError('Error al validar el código de sistema. Intenta nuevamente.');
+          return false;
+        }
+
         if (existente && (!productoEditar || existente.id_producto !== productoEditar.id_producto)) {
-          setError('El código de sistema ya existe. Generando uno nuevo...');
+          setError('El código de sistema ya existe en esta tienda. Generando uno nuevo...');
           await generarCodigoSistema();
           return false;
         }
-      } catch (error) {
-        console.error('Error validando código de sistema:', error);
+      } catch (err) {
+        console.error('Error validando código de sistema:', err);
+        setError('Error al validar el código de sistema. Intenta nuevamente.');
+        return false;
       }
     }
 
     return true;
   };
 
-  // Función auxiliar para verificar código único
-  const verificarCodigoUnico = async (codigo: string): Promise<boolean> => {
-    try {
-      const { data: existente } = await supabase
-        .from('productos')
-        .select('id_producto')
-        .eq('codigo_producto', codigo)
-        .maybeSingle();
-
-      return !existente;
-    } catch (error) {
-      console.error('Error verificando código:', error);
-      return false;
-    }
-  };
-
-  // Función auxiliar para generar código único
-  const generarCodigoUnico = async (): Promise<string> => {
-    try {
-      const { data } = await supabase
-        .from('productos')
-        .select('codigo_producto')
-        .like('codigo_producto', 'PROD-%')
-        .order('codigo_producto', { ascending: false })
-        .limit(1);
-
-      let siguienteNumero = 1;
-      
-      if (data && data.length > 0 && data[0].codigo_producto) {
-        const ultimoCodigo = data[0].codigo_producto;
-        const match = ultimoCodigo.match(/PROD-(\d+)/);
-        if (match) {
-          const numero = parseInt(match[1]);
-          if (!isNaN(numero)) {
-            siguienteNumero = numero + 1;
-          }
-        }
-      }
-
-      // Verificar que el código no exista antes de asignarlo
-      let codigoUnico = false;
-      let intentos = 0;
-      let codigoGenerado = '';
-
-      while (!codigoUnico && intentos < 100) {
-        codigoGenerado = `PROD-${(siguienteNumero + intentos).toString().padStart(3, '0')}`;
-        
-        const { data: existente } = await supabase
-          .from('productos')
-          .select('id_producto')
-          .eq('codigo_producto', codigoGenerado)
-          .maybeSingle();
-
-        if (!existente) {
-          codigoUnico = true;
-        } else {
-          intentos++;
-        }
-      }
-
-      return codigoGenerado;
-    } catch (error) {
-      console.error('Error generando código único:', error);
-      // Fallback con timestamp para garantizar unicidad
-      const timestamp = Date.now().toString().slice(-6);
-      return `PROD-${timestamp}`;
-    }
-  };
-
-  // Función para mapear ID de unidad a símbolo válido del enum
   const mapearUnidad = (unidadId: number): string => {
     const mapeoUnidades: { [key: number]: string } = {
-      1: 'Uni',    // Unidad
-      2: 'kg',     // Kilogramo
-      3: 'g',      // Gramo
-      4: 'm',      // Metro
-      5: 'cm',     // Centímetro
-      6: 'mm',     // Milímetro
-      7: 'h',      // Hora
-      8: 'min',    // Minuto
-      9: 's',      // Segundo
-      10: 'Uni'    // Por defecto Unidad
+      1: 'Uni',
+      2: 'kg',
+      3: 'g',
+      4: 'm',
+      5: 'cm',
+      6: 'mm',
+      7: 'h',
+      8: 'min',
+      9: 's',
+      10: 'Uni'
     };
     return mapeoUnidades[unidadId] || 'Uni';
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (!tiendaActual) {
       setError('No hay tienda seleccionada');
+      showError('No se puede guardar: no hay tienda seleccionada');
       return;
     }
 
@@ -432,7 +392,6 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
     setError('');
 
     try {
-      // Validar formulario primero
       const esValido = await validarFormulario();
       if (!esValido) {
         setLoading(false);
@@ -443,34 +402,40 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
 
       // Verificación final antes de guardar (solo para productos nuevos)
       if (!productoEditar) {
-        const { data: existingProduct } = await supabase
-          .from('productos')
-          .select('id_producto')
-          .eq('codigo_producto', codigoProducto)
-          .maybeSingle();
-
-        if (existingProduct) {
-          // Si existe, generar un nuevo código único y usarlo directamente
-          setError('El código ya está en uso. Generando uno nuevo...');
-          codigoProducto = await generarCodigoProducto();
-          
-          // Esperar a que React actualice el estado
-          await new Promise(resolve => setTimeout(resolve, 100));
-          
-          // Verificar nuevamente que el nuevo código sea único
-          const { data: stillExists } = await supabase
+        try {
+          const { data: existingProduct, error: errExisting } = await supabase
             .from('productos')
             .select('id_producto')
+            .eq('tienda_id', tiendaActual)
             .eq('codigo_producto', codigoProducto)
             .maybeSingle();
 
-          if (stillExists) {
-            // Si aún existe, usar timestamp como fallback definitivo
-            codigoProducto = `PROD-${Date.now().toString().slice(-6)}`;
-            setFormData(prev => ({ ...prev, codigo_producto: codigoProducto }));
+          if (errExisting) {
+            console.error('Error verificando código antes de guardar:', errExisting);
           }
-          
-          setError('');
+
+          if (existingProduct) {
+            setError('El código ya está en uso en esta tienda. Generando uno nuevo...');
+            codigoProducto = await generarCodigoProducto();
+            
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            const { data: stillExists } = await supabase
+              .from('productos')
+              .select('id_producto')
+              .eq('tienda_id', tiendaActual)
+              .eq('codigo_producto', codigoProducto)
+              .maybeSingle();
+
+            if (stillExists) {
+              codigoProducto = `PROD-${Date.now().toString().slice(-6)}`;
+              setFormData(prev => ({ ...prev, codigo_producto: codigoProducto }));
+            }
+            
+            setError('');
+          }
+        } catch (err) {
+          console.error('Error en verificación final de código:', err);
         }
       }
 
@@ -478,49 +443,106 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
 
       if (productoEditar) {
         // Actualizar producto existente
-        const { data, error } = await supabase
+        const updateData: any = {
+          codigo_producto: formData.codigo_producto,
+          descripcion_producto: formData.descripcion_producto,
+          categoria_id: parseInt(formData.categoria_id),
+          codigo_sistema: formData.codigo_sistema,
+          costo_total_bom: costoTotal,
+        };
+        // Solo incluir moneda si el backend la soporta
+        if (formData.moneda) {
+          updateData.moneda = formData.moneda;
+        }
+
+        const { data, error: updateError } = await supabase
           .from('productos')
-          .update({
-            codigo_producto: formData.codigo_producto,
-            descripcion_producto: formData.descripcion_producto,
-            categoria_id: parseInt(formData.categoria_id),
-            codigo_sistema: formData.codigo_sistema,
-            costo_total_bom: costoTotal
-          })
+          .update(updateData)
           .eq('id_producto', productoEditar.id_producto)
+          .eq('tienda_id', tiendaActual)
           .select()
           .single();
 
-        if (error) throw error;
-        productoId = data.id_producto;
+        if (updateError) {
+          // Si falla por columna moneda no existente, reintentar sin ella
+          if (updateError.code === 'PGRST204' && updateError.message?.includes('moneda')) {
+            delete updateData.moneda;
+            const { data: retryData, error: retryError } = await supabase
+              .from('productos')
+              .update(updateData)
+              .eq('id_producto', productoEditar.id_producto)
+              .eq('tienda_id', tiendaActual)
+              .select()
+              .single();
+            if (retryError) throw retryError;
+            if (!retryData) throw new Error('No se recibió respuesta al actualizar el producto');
+            productoId = retryData.id_producto;
+            showError('Aviso: la columna "moneda" no existe en la base de datos. Ejecuta el SQL sql_agregar_moneda_productos.sql en Supabase para habilitarla.');
+          } else {
+            throw updateError;
+          }
+        } else {
+          if (!data) throw new Error('No se recibió respuesta al actualizar el producto');
+          productoId = data.id_producto;
+        }
 
-        // Eliminar componentes existentes del BOM antes de insertar los nuevos
+        // Eliminar componentes existentes del BOM
         const { error: deleteError } = await supabase
           .from('bom_items')
           .delete()
           .eq('product_id', productoId);
 
-        if (deleteError) throw deleteError;
+        if (deleteError) {
+          console.error('Error eliminando BOM items anteriores:', deleteError);
+          // No lanzamos error aquí, continuamos intentando insertar los nuevos
+        }
       } else {
         // Crear nuevo producto CON tienda_id
-        const { data, error } = await supabase
+        const insertData: any = {
+          codigo_producto: codigoProducto,
+          descripcion_producto: formData.descripcion_producto,
+          categoria_id: parseInt(formData.categoria_id),
+          codigo_sistema: formData.codigo_sistema,
+          costo_total_bom: costoTotal,
+          tienda_id: tiendaActual,
+        };
+        // Solo incluir moneda si el backend la soporta
+        if (formData.moneda) {
+          insertData.moneda = formData.moneda;
+        }
+
+        const { data, error: insertError } = await supabase
           .from('productos')
-          .insert({
-            codigo_producto: codigoProducto,
-            descripcion_producto: formData.descripcion_producto,
-            categoria_id: parseInt(formData.categoria_id),
-            codigo_sistema: formData.codigo_sistema,
-            costo_total_bom: costoTotal,
-            tienda_id: tiendaActual
-          })
+          .insert(insertData)
           .select()
           .single();
 
-        if (error) throw error;
-        productoId = data.id_producto;
+        if (insertError) {
+          // Si falla por columna moneda no existente, reintentar sin ella
+          if (insertError.code === 'PGRST204' && insertError.message?.includes('moneda')) {
+            delete insertData.moneda;
+            const { data: retryData, error: retryError } = await supabase
+              .from('productos')
+              .insert(insertData)
+              .select()
+              .single();
+            if (retryError) throw retryError;
+            if (!retryData) throw new Error('No se recibió respuesta al crear el producto');
+            productoId = retryData.id_producto;
+            showError('Aviso: la columna "moneda" no existe en la base de datos. Ejecuta el SQL sql_agregar_moneda_productos.sql en Supabase para habilitarla.');
+          } else {
+            throw insertError;
+          }
+        } else {
+          if (!data) throw new Error('No se recibió respuesta al crear el producto');
+          productoId = data.id_producto;
+        }
       }
 
       // Guardar componentes del BOM si existen
+      let bomGuardado = true;
+      let bomErrorMsg = '';
+      
       if (bomItems.length > 0) {
         const bomData = bomItems.map(comp => ({
           product_id: productoId,
@@ -537,29 +559,62 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
           .from('bom_items')
           .insert(bomData);
 
-        if (bomError) throw bomError;
+        if (bomError) {
+          bomGuardado = false;
+          bomErrorMsg = bomError.message || '';
+          console.error('Error guardando BOM items:', bomError);
+          
+          // Si es error de permisos RLS, mostrar mensaje específico
+          if (bomError.code === '42501') {
+            setError('El producto se guardó correctamente, pero NO se pudieron guardar los componentes BOM por falta de permisos. Contacta al administrador para que revise las políticas de seguridad de la tabla "bom_items".');
+            showError('Producto guardado, pero los componentes BOM no se guardaron por falta de permisos. Contacta al administrador.');
+          } else {
+            setError(`El producto se guardó correctamente, pero hubo un error al guardar los componentes BOM: ${bomErrorMsg}`);
+            showError(`Producto guardado, pero error en BOM: ${bomErrorMsg}`);
+          }
+          
+          // Aún así consideramos éxito parcial — el producto sí se guardó
+          onSuccess();
+          onClose();
+          return;
+        }
+      }
+
+      // ÉXITO completo: mostrar mensaje claro
+      if (productoEditar) {
+        showSuccess(`Producto "${formData.descripcion_producto}" actualizado correctamente`);
+      } else {
+        showSuccess(`Producto "${formData.descripcion_producto}" creado correctamente con código ${codigoProducto}`);
       }
 
       onSuccess();
       onClose();
-    } catch (error: any) {
-      console.error('Error guardando producto:', error);
+    } catch (err: any) {
+      console.error('Error guardando producto:', err);
       
-      // Manejo específico de errores
-      if (error?.code === '23505') {
-        if (error?.message?.includes('productos_codigo_producto_key')) {
-          setError('El código de producto ya está en uso. Por favor, genera uno nuevo y vuelve a intentar.');
+      if (err?.code === '23505') {
+        if (err?.message?.includes('productos_codigo_producto_key')) {
+          setError('El código de producto ya está en uso en esta tienda. Se generará uno nuevo automáticamente.');
           await generarCodigoProducto();
-        } else if (error?.message?.includes('productos_codigo_sistema_key')) {
-          setError('El código de sistema ya está en uso. Por favor, genera uno nuevo.');
+          showError('El código de producto ya existe en esta tienda. Se generó uno nuevo, intenta guardar de nuevo.');
+        } else if (err?.message?.includes('productos_codigo_sistema_key')) {
+          setError('El código de sistema ya está en uso en esta tienda. Se generará uno nuevo automáticamente.');
           await generarCodigoSistema();
+          showError('El código de sistema ya existe en esta tienda. Se generó uno nuevo, intenta guardar de nuevo.');
         } else {
-          setError('Ya existe un producto con estos datos. Por favor, verifica la información.');
+          setError('Ya existe un producto con estos datos en esta tienda. Por favor, verifica la información.');
+          showError('Error de duplicado: ya existe un producto con estos datos en esta tienda.');
         }
-      } else if (error?.code === '42501') {
+      } else if (err?.code === '42501') {
         setError('No tienes permisos para realizar esta acción. Contacta al administrador.');
+        showError('No tienes permisos para guardar productos. Contacta al administrador.');
+      } else if (err?.code === 'PGRST116') {
+        setError('No se encontró el producto para actualizar. Puede que haya sido eliminado o no pertenezca a tu tienda.');
+        showError('No se encontró el producto. Puede que haya sido eliminado o no pertenezca a tu tienda.');
       } else {
-        setError(error?.message || 'Error al guardar el producto. Por favor, intenta nuevamente.');
+        const msg = err?.message || 'Error desconocido al guardar el producto';
+        setError(msg);
+        showError(`Error al guardar: ${msg}`);
       }
     } finally {
       setLoading(false);
@@ -628,7 +683,6 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Información básica del producto */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -661,6 +715,41 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
                     <option key={cat.id} value={cat.id}>{cat.nombre}</option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Moneda del Precio *
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, moneda: 'CRC' })}
+                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 transition-all whitespace-nowrap cursor-pointer ${
+                      formData.moneda === 'CRC'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-medium'
+                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}
+                  >
+                    <span className="text-base">&#x20A1;</span>
+                    <span className="text-sm">Colones</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, moneda: 'USD' })}
+                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 transition-all whitespace-nowrap cursor-pointer ${
+                      formData.moneda === 'USD'
+                        ? 'border-amber-500 bg-amber-50 text-amber-700 font-medium'
+                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}
+                  >
+                    <span className="text-base">$</span>
+                    <span className="text-sm">Dólares</span>
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Define la moneda en que está expresado el costo BOM
+                </p>
               </div>
 
               <div className="md:col-span-2">
@@ -715,7 +804,6 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
               </div>
             </div>
 
-            {/* Sección BOM */}
             <div className="border-t pt-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-medium text-gray-900">
@@ -752,12 +840,11 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
               )}
             </div>
 
-            {/* Botones */}
             <div className="flex gap-3 pt-4 border-t">
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-770 transition-colors disabled:opacity-50 whitespace-nowrap"
+                className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 whitespace-nowrap"
               >
                 {loading ? (
                   <>
@@ -783,11 +870,11 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         </div>
       </div>
 
-      {/* Modal de búsqueda de artículos */}
       {showBuscarModal && (
         <BuscarArticuloModal
           onSeleccionar={agregarComponente}
           onCerrar={() => setShowBuscarModal(false)}
+          moneda={formData.moneda}
         />
       )}
     </div>

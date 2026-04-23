@@ -67,6 +67,8 @@ interface Cotizacion {
   notas?: string;
   observaciones?: string;
   condiciones?: string;
+  moneda?: string;
+  tipo_cambio?: number;
   cliente?: Cliente;
   cotizacion_items: CotizacionItem[];
 }
@@ -205,18 +207,17 @@ export default function CotizacionPrintPage() {
     }
   };
 
-  const formatearMoneda = (valor: number | string | null | undefined) => {
+  const formatearMoneda = (valor: number | string | null | undefined, moneda: string = 'CRC') => {
     const valorNumerico = Number(valor);
     if (isNaN(valorNumerico) || valor === null || valor === undefined) {
-      return '₡0,00';
+      return moneda === 'USD' ? '$0,00' : '₡0,00';
     }
     
-    return new Intl.NumberFormat('es-CR', {
-      style: 'currency',
-      currency: 'CRC',
+    const simbolo = moneda === 'USD' ? '$' : '₡';
+    return simbolo + valorNumerico.toLocaleString('es-CR', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
-    }).format(valorNumerico);
+    });
   };
 
   if (loading) {
@@ -280,6 +281,9 @@ export default function CotizacionPrintPage() {
                          '2205-2525';
 
   const direccionCliente = cotizacion.cliente?.direccion || 'San José, Costa Rica';
+
+  const monedaCotizacion = cotizacion.moneda || 'CRC';
+  const simboloMoneda = monedaCotizacion === 'USD' ? '$' : '₡';
 
   return (
     <>
@@ -469,6 +473,16 @@ export default function CotizacionPrintPage() {
                     {cotizacion.estado}
                   </span>
                 </p>
+                <p><span className="font-medium">Moneda:</span>
+                  <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${
+                    monedaCotizacion === 'USD' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                  }`}>
+                    {monedaCotizacion === 'USD' ? '$ Dólares (USD)' : '₡ Colones (CRC)'}
+                  </span>
+                </p>
+                {monedaCotizacion === 'USD' && cotizacion.tipo_cambio && (
+                  <p><span className="font-medium">Tipo de cambio:</span> ₡{cotizacion.tipo_cambio.toLocaleString('es-CR', { minimumFractionDigits: 2 })}</p>
+                )}
               </div>
             </div>
           </div>
@@ -511,14 +525,14 @@ export default function CotizacionPrintPage() {
                                 </td>
                                 <td className="border border-gray-300 px-4 py-3 text-center w-16">UN</td>
                                 <td className="border border-gray-300 px-4 py-3 text-right w-24">
-                                  {formatearMoneda(Number(item.precio_unitario))}
+                                  {formatearMoneda(Number(item.precio_unitario), monedaCotizacion)}
                                 </td>
                                 <td className="border border-gray-300 px-4 py-3 text-center w-16">
                                   {Number(item.descuento || 0).toFixed(1)}%
                                 </td>
                                 <td className="border border-gray-300 px-4 py-3 text-center w-16">13%</td>
                                 <td className="border border-gray-300 px-4 py-3 text-right font-semibold w-24">
-                                  {formatearMoneda(Number(item.subtotal))}
+                                  {formatearMoneda(Number(item.subtotal), monedaCotizacion)}
                                 </td>
                               </tr>
 
@@ -561,10 +575,10 @@ export default function CotizacionPrintPage() {
                                                     {comp.unidad || '—'}
                                                   </td>
                                                   <td className="text-right py-2 px-3 border-b border-gray-100">
-                                                    {formatearMoneda(precioUnitario)}
+                                                    {formatearMoneda(precioUnitario, monedaCotizacion)}
                                                   </td>
                                                   <td className="text-right py-2 px-3 border-b border-gray-100 font-medium">
-                                                    {formatearMoneda(totalComponente)}
+                                                    {formatearMoneda(totalComponente, monedaCotizacion)}
                                                   </td>
                                                 </tr>
                                               );
@@ -594,32 +608,32 @@ export default function CotizacionPrintPage() {
                 <div className="space-y-3">
                   <div className="flex justify-between">
                     <span className="font-medium">Subtotal:</span>
-                    <span>{formatearMoneda(subtotalValor)}</span>
+                    <span>{formatearMoneda(subtotalValor, monedaCotizacion)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="font-medium">Descuento:</span>
-                    <span>-{formatearMoneda(descuentoValor)}</span>
+                    <span>-{formatearMoneda(descuentoValor, monedaCotizacion)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="font-medium">Impuesto:</span>
-                    <span>{formatearMoneda(impuestoValor)}</span>
+                    <span>{formatearMoneda(impuestoValor, monedaCotizacion)}</span>
                   </div>
                   {cotizacion.flete && Number(cotizacion.flete) > 0 && (
                     <div className="flex justify-between">
                       <span className="font-medium">Flete:</span>
-                      <span>{formatearMoneda(Number(cotizacion.flete))}</span>
+                      <span>{formatearMoneda(Number(cotizacion.flete), monedaCotizacion)}</span>
                     </div>
                   )}
                   {cotizacion.otros_cargos && Number(cotizacion.otros_cargos) > 0 && (
                     <div className="flex justify-between">
                       <span className="font-medium">Otros:</span>
-                      <span>{formatearMoneda(Number(cotizacion.otros_cargos))}</span>
+                      <span>{formatearMoneda(Number(cotizacion.otros_cargos), monedaCotizacion)}</span>
                     </div>
                   )}
                   <div className="border-t border-gray-300 pt-3">
                     <div className="flex justify-between text-lg font-bold">
                       <span>Total:</span>
-                      <span>{formatearMoneda(Number(cotizacion.total))}</span>
+                      <span>{formatearMoneda(Number(cotizacion.total), monedaCotizacion)}</span>
                     </div>
                   </div>
                 </div>

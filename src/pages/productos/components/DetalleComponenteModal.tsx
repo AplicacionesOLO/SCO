@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
+import { formatCurrencyWithSymbol, getCurrencySymbol } from '../../../lib/currency';
 
 interface Articulo {
   id_articulo: number;
@@ -18,11 +19,12 @@ interface Articulo {
 
 interface Props {
   articulo: Articulo;
+  moneda?: string;
   onConfirmar: (cantidad: number, unidadId: number, precioAjustado: number) => void;
   onCerrar: () => void;
 }
 
-export default function DetalleComponenteModal({ articulo, onConfirmar, onCerrar }: Props) {
+export default function DetalleComponenteModal({ articulo, moneda = 'CRC', onConfirmar, onCerrar }: Props) {
   const [cantidad, setCantidad] = useState('1.00');
   const [unidadId, setUnidadId] = useState('');
   const [unidades, setUnidades] = useState<any[]>([]);
@@ -185,14 +187,16 @@ export default function DetalleComponenteModal({ articulo, onConfirmar, onCerrar
               </div>
               <div className="text-right">
                 <div className="font-semibold text-green-600">
-                  ${articulo.precio_articulo.toLocaleString('es-ES', { 
-                    minimumFractionDigits: 2, 
-                    maximumFractionDigits: 2 
-                  })}
+                  {formatCurrencyWithSymbol(articulo.precio_articulo, moneda)}
                 </div>
                 <div className="text-xs text-gray-500">
                   por {articulo.unidad?.simbolo || 'unidad'}
                 </div>
+                <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                  moneda === 'USD' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                }`}>
+                  {getCurrencySymbol(moneda)} {moneda}
+                </span>
               </div>
             </div>
           </div>
@@ -260,14 +264,11 @@ export default function DetalleComponenteModal({ articulo, onConfirmar, onCerrar
               <div className="flex justify-between items-center">
                 <span className="font-medium text-green-900">Precio Total del Componente:</span>
                 <span className="text-xl font-bold text-green-900">
-                  ${precioAjustado.toLocaleString('es-ES', { 
-                    minimumFractionDigits: 2, 
-                    maximumFractionDigits: 2 
-                  })}
+                  {formatCurrencyWithSymbol(precioAjustado, moneda)}
                 </span>
               </div>
               <div className="text-xs text-green-700 mt-1">
-                {cantidad} × {factorConversion.toFixed(4)} × ${articulo.precio_articulo.toFixed(2)}
+                {cantidad} × {factorConversion.toFixed(4)} × {getCurrencySymbol(moneda)}{articulo.precio_articulo.toFixed(2)}
               </div>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
+import { formatCurrencyWithSymbol, getCurrencySymbol } from '../../../lib/currency';
 import CrearArticuloModal from './CrearArticuloModal';
 import DetalleComponenteModal from './DetalleComponenteModal';
 
@@ -21,9 +22,10 @@ interface Articulo {
 interface Props {
   onSeleccionar: (articulo: Articulo, cantidad: number, unidadId: number, precioAjustado: number) => void;
   onCerrar: () => void;
+  moneda?: string;
 }
 
-export default function BuscarArticuloModal({ onSeleccionar, onCerrar }: Props) {
+export default function BuscarArticuloModal({ onSeleccionar, onCerrar, moneda = 'CRC' }: Props) {
   const [busqueda, setBusqueda] = useState('');
   const [articulos, setArticulos] = useState<Articulo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -198,12 +200,16 @@ export default function BuscarArticuloModal({ onSeleccionar, onCerrar }: Props) 
                   </div>
                   <div className="text-right">
                     <div className="font-semibold text-green-600">
-                      ₡{articulo.precio_articulo.toLocaleString('es-CR', { 
-                        minimumFractionDigits: 2, 
-                        maximumFractionDigits: 2 
-                      })}
+                      {formatCurrencyWithSymbol(articulo.precio_articulo, moneda)}
                     </div>
-                    <div className="text-xs text-gray-500">por unidad</div>
+                    <div className="text-xs text-gray-500">
+                      por unidad
+                      <span className={`ml-1 px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                        moneda === 'USD' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {getCurrencySymbol(moneda)} {moneda}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -238,6 +244,7 @@ export default function BuscarArticuloModal({ onSeleccionar, onCerrar }: Props) 
       {showDetalleModal && articuloSeleccionado && (
         <DetalleComponenteModal
           articulo={articuloSeleccionado}
+          moneda={moneda}
           onConfirmar={confirmarSeleccion}
           onCerrar={() => {
             setShowDetalleModal(false);

@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../../../lib/supabase';
 import { PermissionButton } from '../../../components/base/PermissionButton';
+import { getCurrencySymbol } from '../../../lib/currency';
 
 interface Producto {
   id_producto: number;
@@ -43,6 +42,9 @@ export default function ProductosTable({ productos, loading, onEdit, onEliminar,
             </th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Código Sistema
+            </th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Moneda
             </th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Costo Total BOM
@@ -94,14 +96,20 @@ export default function ProductosTable({ productos, loading, onEdit, onEliminar,
                 {producto.codigo_sistema || '-'}
               </td>
               
+              {/* Moneda */}
+              <td className="px-6 py-4 whitespace-nowrap text-sm">
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                  ((producto as any).moneda || 'CRC') === 'USD'
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-emerald-100 text-emerald-700'
+                }`}>
+                  {(producto as any).moneda || 'CRC'}
+                </span>
+              </td>
+
               {/* Costo Total BOM */}
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                {new Intl.NumberFormat('es-CR', {
-                  style: 'currency',
-                  currency: 'CRC',
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2
-                }).format((producto as any).costo_total_bom || 0)}
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
+                {getCurrencySymbol((producto as any).moneda || 'CRC')}{((producto as any).costo_total_bom || 0).toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </td>
               
               {/* Fecha Creación */}

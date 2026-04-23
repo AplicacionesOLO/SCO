@@ -676,24 +676,68 @@ Equipo de Ventas`;
     }
   };
 
+  const getEstadoIcon = (estado: string) => {
+    switch (estado) {
+      case 'borrador': return 'ri-draft-line';
+      case 'enviada': return 'ri-send-plane-line';
+      case 'aceptada': return 'ri-check-double-line';
+      case 'rechazada': return 'ri-close-circle-line';
+      case 'vencida': return 'ri-time-line';
+      default: return 'ri-file-line';
+    }
+  };
+
+  const getEstadoBorderColor = (estado: string) => {
+    switch (estado) {
+      case 'borrador': return 'border-l-gray-300';
+      case 'enviada': return 'border-l-sky-400';
+      case 'aceptada': return 'border-l-emerald-400';
+      case 'rechazada': return 'border-l-red-400';
+      case 'vencida': return 'border-l-orange-400';
+      default: return 'border-l-gray-300';
+    }
+  };
+
+  const getVencimientoInfo = (fecha: string | null | undefined) => {
+    if (!fecha) return null;
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    const venc = new Date(fecha);
+    venc.setHours(0, 0, 0, 0);
+    const diff = Math.ceil((venc.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
+    if (diff < 0) return { label: `Venció hace ${Math.abs(diff)}d`, cls: 'text-red-600 bg-red-50', icon: 'ri-error-warning-line' };
+    if (diff === 0) return { label: 'Vence hoy', cls: 'text-orange-600 bg-orange-50', icon: 'ri-alarm-warning-line' };
+    if (diff <= 5) return { label: `Vence en ${diff}d`, cls: 'text-amber-600 bg-amber-50', icon: 'ri-timer-line' };
+    return { label: formatFecha(fecha), cls: 'text-gray-500 bg-transparent', icon: '' };
+  };
+
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow-sm border">
-        <div className="p-8 text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-2 text-gray-600">Cargando cotizaciones...</p>
-        </div>
+      <div className="space-y-3">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="bg-white rounded-lg border border-l-4 border-l-gray-200 p-4 animate-pulse">
+            <div className="flex justify-between items-start">
+              <div className="space-y-2 flex-1">
+                <div className="h-4 bg-gray-200 rounded w-24"></div>
+                <div className="h-3 bg-gray-100 rounded w-48"></div>
+              </div>
+              <div className="h-6 bg-gray-200 rounded-full w-20"></div>
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
 
   if (cotizaciones.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-sm border">
-        <div className="p-8 text-center">
-          <i className="ri-file-list-3-line text-4xl text-gray-400 mb-4"></i>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No hay cotizaciones</h3>
-          <p className="text-gray-600">No se encontraron cotizaciones con los filtros aplicados.</p>
+      <div className="bg-white rounded-lg border border-dashed border-gray-300">
+        <div className="py-16 text-center">
+          <div className="w-16 h-16 flex items-center justify-center bg-gray-50 rounded-full mx-auto mb-4">
+            <i className="ri-file-list-3-line text-3xl text-gray-300"></i>
+          </div>
+          <h3 className="text-base font-medium text-gray-700 mb-1">No hay cotizaciones</h3>
+          <p className="text-sm text-gray-400">No se encontraron cotizaciones con los filtros aplicados.</p>
         </div>
       </div>
     );
@@ -701,214 +745,207 @@ Equipo de Ventas`;
 
   return (
     <>
-      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Código
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Cliente
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Estado
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Fecha Emisión
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Vencimiento
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Total
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Moneda
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Acciones
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {cotizaciones.map((cotizacion) => (
-                <tr key={cotizacion.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
+      <div className="space-y-2">
+        {cotizaciones.map((cotizacion) => {
+          const vencInfo = getVencimientoInfo(cotizacion.fecha_vencimiento);
+          const esOptimizador = cotizacion.metadata?.tipo === 'optimizador';
+          return (
+            <div
+              key={cotizacion.id}
+              className={`bg-white rounded-lg border border-l-4 ${getEstadoBorderColor(cotizacion.estado)} hover:border-gray-300 transition-all duration-150 group`}
+            >
+              <div className="px-4 py-3 flex items-center gap-4">
+
+                {/* Estado icon */}
+                <div className={`w-8 h-8 flex items-center justify-center rounded-full flex-shrink-0 ${
+                  cotizacion.estado === 'aceptada' ? 'bg-emerald-50 text-emerald-600' :
+                  cotizacion.estado === 'rechazada' ? 'bg-red-50 text-red-500' :
+                  cotizacion.estado === 'enviada' ? 'bg-sky-50 text-sky-600' :
+                  cotizacion.estado === 'vencida' ? 'bg-orange-50 text-orange-500' :
+                  'bg-gray-100 text-gray-400'
+                }`}>
+                  <i className={`${getEstadoIcon(cotizacion.estado)} text-sm`}></i>
+                </div>
+
+                {/* Código + cliente */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-gray-900 font-mono tracking-wide">
                       {cotizacion.codigo}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {cotizacion.clientes?.nombre_razon_social || 'Sin cliente'}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {cotizacion.clientes?.identificacion || ''}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getEstadoColor(cotizacion.estado)}`}>
-                      {getEstadoTexto(cotizacion.estado)}
                     </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {formatFecha(cotizacion.fecha_emision)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {cotizacion.fecha_vencimiento ? formatFecha(cotizacion.fecha_vencimiento) : '-'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {formatCurrency(cotizacion.total, cotizacion.moneda)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {cotizacion.moneda}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <div className="relative">
-                      <button
-                        onClick={() => toggleMenu(cotizacion.id!)}
-                        className="text-gray-400 hover:text-gray-600 cursor-pointer"
-                      >
-                        <i className="ri-more-2-fill"></i>
-                      </button>
-                      
-                      {menuAbierto === cotizacion.id && (
-                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 border">
-                          <div className="py-1">
-                            {/* Opción especial para cotizaciones del optimizador */}
-                            {cotizacion.metadata?.tipo === 'optimizador' && (
-                              <button
-                                onClick={() => {
-                                  console.log('[COTIZACIONES] Navegando a cotización optimizador:', cotizacion.id);
-                                  navigate(`/cotizaciones/optimizador/${cotizacion.id}`);
-                                  setMenuAbierto(null);
-                                }}
-                                className="block w-full text-left px-4 py-2 text-sm text-teal-700 hover:bg-teal-50 cursor-pointer font-medium"
-                              >
-                                <i className="ri-scissors-cut-line mr-2"></i>
-                                Ver Optimizador
-                              </button>
-                            )}
-                            
-                            <button
-                              onClick={() => {
-                                onEditar(cotizacion);
-                                setMenuAbierto(null);
-                              }}
-                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
-                            >
-                              <i className="ri-edit-line mr-2"></i>
-                              Editar
-                            </button>
-                            
-                            <button
-                              onClick={() => {
-                                generarPDF(cotizacion);
-                                setMenuAbierto(null);
-                              }}
-                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
-                            >
-                              <i className="ri-printer-line mr-2"></i>
-                              Imprimir
-                            </button>
+                    {esOptimizador && (
+                      <span className="text-xs px-1.5 py-0.5 bg-teal-50 text-teal-600 rounded font-medium">
+                        <i className="ri-scissors-cut-line mr-1"></i>Optimizador
+                      </span>
+                    )}
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      cotizacion.moneda === 'USD' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
+                    }`}>
+                      {cotizacion.moneda === 'USD' ? '$ USD' : '₡ CRC'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 truncate mt-0.5">
+                    <i className="ri-user-3-line mr-1"></i>
+                    {cotizacion.clientes?.nombre_razon_social || 'Sin cliente'}
+                    {cotizacion.clientes?.identificacion && (
+                      <span className="text-gray-400 ml-1">· {cotizacion.clientes.identificacion}</span>
+                    )}
+                  </p>
+                </div>
 
-                            <button
-                              onClick={() => abrirModalEnvio(cotizacion)}
-                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
-                            >
-                              <i className="ri-mail-send-line mr-2"></i>
-                              Enviar
-                            </button>
-                            
-                            <button
-                              onClick={() => verCotizacionDetallada(cotizacion.id!)}
-                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
-                            >
-                              <i className="ri-file-text-line mr-2"></i>
-                              Ver Detallada
-                            </button>
-
-                            <button
-                              onClick={() => descargarPDFDetallado(cotizacion)}
-                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
-                            >
-                              <i className="ri-download-line mr-2"></i>
-                              Descargar PDF
-                            </button>
-                            
-                            <button
-                              onClick={() => {
-                                onDuplicar(cotizacion.id!);
-                                setMenuAbierto(null);
-                              }}
-                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
-                            >
-                              <i className="ri-file-copy-line mr-2"></i>
-                              Duplicar
-                            </button>
-
-                            {cotizacion.estado === 'borrador' && (
-                              <button
-                                onClick={() => {
-                                  onCambiarEstado(cotizacion.id!, 'enviada');
-                                  setMenuAbierto(null);
-                                }}
-                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
-                              >
-                                <i className="ri-send-plane-line mr-2"></i>
-                                Marcar como Enviada
-                              </button>
-                            )}
-
-                            {cotizacion.estado === 'enviada' && (
-                              <>
-                                <button
-                                  onClick={() => {
-                                    onCambiarEstado(cotizacion.id!, 'aceptada');
-                                    setMenuAbierto(null);
-                                  }}
-                                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
-                                >
-                                  <i className="ri-check-line mr-2"></i>
-                                  Marcar Aceptada
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    onCambiarEstado(cotizacion.id!, 'rechazada');
-                                    setMenuAbierto(null);
-                                  }}
-                                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
-                                >
-                                  <i className="ri-close-line mr-2"></i>
-                                  Marcar Rechazada
-                                </button>
-                              </>
-                            )}
-
-                            <div className="border-t border-gray-100"></div>
-                            
-                            <button
-                              onClick={() => {
-                                onEliminar(cotizacion.id!);
-                                setMenuAbierto(null);
-                              }}
-                              className="block w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-red-50 cursor-pointer"
-                            >
-                              <i className="ri-delete-bin-line mr-2"></i>
-                              Eliminar
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                {/* Fechas */}
+                <div className="hidden md:flex flex-col items-end gap-1 min-w-[120px]">
+                  <div className="flex items-center gap-1 text-xs text-gray-400">
+                    <i className="ri-calendar-line"></i>
+                    <span>{formatFecha(cotizacion.fecha_emision)}</span>
+                  </div>
+                  {vencInfo && (
+                    <div className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded ${vencInfo.cls}`}>
+                      {vencInfo.icon && <i className={vencInfo.icon}></i>}
+                      <span>{vencInfo.label}</span>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  )}
+                </div>
+
+                {/* Estado badge */}
+                <div className="hidden sm:block">
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full ${getEstadoColor(cotizacion.estado)}`}>
+                    {getEstadoTexto(cotizacion.estado)}
+                  </span>
+                </div>
+
+                {/* Total */}
+                <div className="text-right min-w-[110px]">
+                  <div className="text-sm font-bold text-gray-900">
+                    {formatCurrency(cotizacion.total, cotizacion.moneda)}
+                  </div>
+                  <div className="text-xs text-gray-400">Total</div>
+                </div>
+
+                {/* Acciones rápidas + menú */}
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => { onEditar(cotizacion); }}
+                    title="Editar"
+                    className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-pointer"
+                  >
+                    <i className="ri-edit-line text-sm"></i>
+                  </button>
+                  <button
+                    onClick={() => verCotizacionDetallada(cotizacion.id!)}
+                    title="Ver detallada"
+                    className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-pointer"
+                  >
+                    <i className="ri-eye-line text-sm"></i>
+                  </button>
+                  <button
+                    onClick={() => generarPDF(cotizacion)}
+                    title="Imprimir"
+                    className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-pointer"
+                  >
+                    <i className="ri-printer-line text-sm"></i>
+                  </button>
+                </div>
+
+                {/* Menú desplegable */}
+                <div className="relative flex-shrink-0">
+                  <button
+                    onClick={() => toggleMenu(cotizacion.id!)}
+                    className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-pointer"
+                  >
+                    <i className="ri-more-2-fill text-sm"></i>
+                  </button>
+
+                  {menuAbierto === cotizacion.id && (
+                    <div className="absolute right-0 mt-1 w-52 bg-white rounded-lg border border-gray-200 z-20 overflow-hidden">
+                      <div className="py-1">
+                        {esOptimizador && (
+                          <button
+                            onClick={() => { navigate(`/cotizaciones/optimizador/${cotizacion.id}`); setMenuAbierto(null); }}
+                            className="flex items-center w-full text-left px-3 py-2 text-sm text-teal-700 hover:bg-teal-50 cursor-pointer font-medium"
+                          >
+                            <i className="ri-scissors-cut-line mr-2.5 w-4"></i>
+                            Ver Optimizador
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { onEditar(cotizacion); setMenuAbierto(null); }}
+                          className="flex items-center w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
+                        >
+                          <i className="ri-edit-line mr-2.5 w-4"></i>Editar
+                        </button>
+                        <button
+                          onClick={() => { generarPDF(cotizacion); setMenuAbierto(null); }}
+                          className="flex items-center w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
+                        >
+                          <i className="ri-printer-line mr-2.5 w-4"></i>Imprimir
+                        </button>
+                        <button
+                          onClick={() => abrirModalEnvio(cotizacion)}
+                          className="flex items-center w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
+                        >
+                          <i className="ri-mail-send-line mr-2.5 w-4"></i>Enviar por correo
+                        </button>
+                        <button
+                          onClick={() => verCotizacionDetallada(cotizacion.id!)}
+                          className="flex items-center w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
+                        >
+                          <i className="ri-file-text-line mr-2.5 w-4"></i>Ver Detallada
+                        </button>
+                        <button
+                          onClick={() => descargarPDFDetallado(cotizacion)}
+                          className="flex items-center w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
+                        >
+                          <i className="ri-download-line mr-2.5 w-4"></i>Descargar PDF
+                        </button>
+                        <button
+                          onClick={() => { onDuplicar(cotizacion.id!); setMenuAbierto(null); }}
+                          className="flex items-center w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
+                        >
+                          <i className="ri-file-copy-line mr-2.5 w-4"></i>Duplicar
+                        </button>
+
+                        {cotizacion.estado === 'borrador' && (
+                          <button
+                            onClick={() => { onCambiarEstado(cotizacion.id!, 'enviada'); setMenuAbierto(null); }}
+                            className="flex items-center w-full text-left px-3 py-2 text-sm text-sky-700 hover:bg-sky-50 cursor-pointer"
+                          >
+                            <i className="ri-send-plane-line mr-2.5 w-4"></i>Marcar como Enviada
+                          </button>
+                        )}
+                        {cotizacion.estado === 'enviada' && (
+                          <>
+                            <button
+                              onClick={() => { onCambiarEstado(cotizacion.id!, 'aceptada'); setMenuAbierto(null); }}
+                              className="flex items-center w-full text-left px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 cursor-pointer"
+                            >
+                              <i className="ri-check-double-line mr-2.5 w-4"></i>Marcar Aceptada
+                            </button>
+                            <button
+                              onClick={() => { onCambiarEstado(cotizacion.id!, 'rechazada'); setMenuAbierto(null); }}
+                              className="flex items-center w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 cursor-pointer"
+                            >
+                              <i className="ri-close-circle-line mr-2.5 w-4"></i>Marcar Rechazada
+                            </button>
+                          </>
+                        )}
+
+                        <div className="border-t border-gray-100 my-1"></div>
+                        <button
+                          onClick={() => { onEliminar(cotizacion.id!); setMenuAbierto(null); }}
+                          className="flex items-center w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 cursor-pointer"
+                        >
+                          <i className="ri-delete-bin-line mr-2.5 w-4"></i>Eliminar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Modal de Envío por Correo */}

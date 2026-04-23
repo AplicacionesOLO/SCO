@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
+import { getCurrencySymbol } from '../../../lib/currency';
 
 interface BuscarProductoModalProps {
   onSelect: (producto: any) => void;
@@ -60,7 +61,12 @@ export function BuscarProductoModal({ onSelect, onClose }: BuscarProductoModalPr
       const { data, error } = await query.limit(50);
 
       if (error) throw error;
-      setProductos(data || []);
+      // Asegurar moneda por defecto
+      const productosConMoneda = (data || []).map(p => ({
+        ...p,
+        moneda: (p as any).moneda || 'CRC'
+      }));
+      setProductos(productosConMoneda);
     } catch (error) {
       console.error('Error cargando productos:', error);
     } finally {
@@ -158,7 +164,18 @@ export function BuscarProductoModal({ onSelect, onClose }: BuscarProductoModalPr
                       <td className="px-6 py-4 text-sm text-gray-900">{producto.codigo_producto}</td>
                       <td className="px-6 py-4 text-sm text-gray-900">{producto.descripcion_producto}</td>
                       <td className="px-6 py-4 text-sm text-gray-900">
-                        ₡{(producto.costo_total_bom || 0).toLocaleString('es-CR', { minimumFractionDigits: 2 })}
+                        <div className="flex items-center gap-2">
+                          <span>
+                            {getCurrencySymbol(producto.moneda || 'CRC')}{(producto.costo_total_bom || 0).toLocaleString('es-CR', { minimumFractionDigits: 2 })}
+                          </span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                            (producto.moneda || 'CRC') === 'USD'
+                              ? 'bg-amber-100 text-amber-700'
+                              : 'bg-emerald-100 text-emerald-700'
+                          }`}>
+                            {producto.moneda || 'CRC'}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <button

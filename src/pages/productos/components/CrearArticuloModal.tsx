@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
+import { showSuccess, showError } from '../../../utils/dialog';
 
 interface Props {
   nombreInicial: string;
@@ -29,13 +30,32 @@ export default function CrearArticuloModal({ nombreInicial, onCreado, onCerrar }
   }, []);
 
   const cargarDatos = async () => {
-    if (!currentStore?.id) return;
-    const [categoriasRes, unidadesRes] = await Promise.all([
-      supabase.from('categorias_inventario').select('*').eq('tienda_id', currentStore.id).order('nombre_categoria'),
-      supabase.from('unidades_medida').select('*').eq('tienda_id', currentStore.id).order('nombre')
-    ]);
-    setCategorias(categoriasRes.data || []);
-    setUnidades(unidadesRes.data || []);
+    if (!currentStore?.id) {
+      setError('No hay tienda seleccionada');
+      return;
+    }
+    try {
+      const [categoriasRes, unidadesRes] = await Promise.all([
+        supabase.from('categorias_inventario').select('*').eq('tienda_id', currentStore.id).order('nombre_categoria'),
+        supabase.from('unidades_medida').select('*').eq('tienda_id', currentStore.id).order('nombre')
+      ]);
+      
+      if (categoriasRes.error) {
+        console.error('Error cargando categorias:', categoriasRes.error);
+        setError('Error cargando categorías');
+      } else {
+        setCategorias(categoriasRes.data || []);
+      }
+      
+      if (unidadesRes.error) {
+        console.error('Error cargando unidades:', unidadesRes.error);
+      } else {
+        setUnidades(unidadesRes.data || []);
+      }
+    } catch (err) {
+      console.error('Error cargando datos:', err);
+      setError('Error al cargar los datos del formulario');
+    }
   };
 
   const generarCodigo = () => {
@@ -44,7 +64,7 @@ export default function CrearArticuloModal({ nombreInicial, onCreado, onCerrar }
     return `ART${timestamp}${random}`;
   };
 
-  const validarFormulario = async () => {
+  const validarFormulario = async (): Promise<boolean> => {
     setError('');
     
     if (!formData.codigo_articulo.trim()) {
@@ -62,6 +82,11 @@ export default function CrearArticuloModal({ nombreInicial, onCreado, onCerrar }
       return false;
     }
 
+    if (!currentStore?.id) {
+      setError('No hay tienda seleccionada. No se puede crear el artículo.');
+      return false;
+    }
+
     const costo = parseFloat(formData.costo_articulo);
     const ganancia = parseFloat(formData.ganancia_articulo);
     
@@ -75,15 +100,28 @@ export default function CrearArticuloModal({ nombreInicial, onCreado, onCerrar }
       return false;
     }
 
-    // Verificar unicidad del código
-    const { data: existente } = await supabase
-      .from('inventario')
-      .select('id_articulo')
-      .ilike('codigo_articulo', formData.codigo_articulo.trim())
-      .maybeSingle();
+    // Verificar unicidad del código SOLO dentro de la tienda actual
+    try {
+      const { data: existente, error: errCheck } = await supabase
+        .from('inventario')
+        .select('id_articulo')
+        .eq('tienda_id', currentStore.id)
+        .ilike('codigo_articulo', formData.codigo_articulo.trim())
+        .maybeSingle();
 
-    if (existente) {
-      setError('Ya existe un artículo con este código');
+      if (errCheck) {
+        console.error('Error validando código:', errCheck);
+        setError('Error al validar el código del artículo. Intenta nuevamente.');
+        return false;
+      }
+
+      if (existente) {
+        setError('Ya existe un artículo con este código en esta tienda');
+        return false;
+      }
+    } catch (err) {
+      console.error('Error validando código:', err);
+      setError('Error al validar el código del artículo. Intenta nuevamente.');
       return false;
     }
 
@@ -96,6 +134,7 @@ export default function CrearArticuloModal({ nombreInicial, onCreado, onCerrar }
     if (!(await validarFormulario())) return;
     
     setLoading(true);
+    setError('');
     
     try {
       const costo = parseFloat(formData.costo_articulo);
@@ -107,12 +146,12 @@ export default function CrearArticuloModal({ nombreInicial, onCreado, onCerrar }
         cantidad_articulo: parseFloat(formData.cantidad_articulo),
         costo_articulo: costo,
         ganancia_articulo: ganancia,
-        categoria_id: parseInt(formData.categoria_id),
+        categoria_inventario_id: parseInt(formData.categoria_id),
         unidad_base_id: parseInt(formData.unidad_base_id),
-        tienda_id: currentStore.id
+        tienda_id: currentStore!.id
       };
 
-      const { data, error } = await supabase
+      const { data, error: insertError } = await supabase
         .from('inventario')
         .insert(datosArticulo)
         .select(`
@@ -122,12 +161,33 @@ export default function CrearArticuloModal({ nombreInicial, onCreado, onCerrar }
         `)
         .maybeSingle();
       
-      if (error) throw error;
+      if (insertError) throw insertError;
+      if (!data) throw new Error('No se recibió respuesta al crear el artículo');
       
+      showSuccess(`Artículo "${data.descripcion_articulo}" creado correctamente`);
       onCreado(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error creando artículo:', err);
-      setError('Error al crear el artículo');
+      
+      if (err?.code === '23505') {
+        if (err?.message?.includes('inventario_codigo_articulo_key')) {
+          setError('Ya existe un artículo con este código en esta tienda. Usa otro código.');
+          showError('Código duplicado: ya existe un artículo con este código en esta tienda.');
+        } else {
+          setError('Ya existe un artículo con estos datos en esta tienda.');
+          showError('Error de duplicado: ya existe un artículo con estos datos.');
+        }
+      } else if (err?.code === '42501') {
+        setError('No tienes permisos para crear artículos. Contacta al administrador.');
+        showError('No tienes permisos para crear artículos. Contacta al administrador.');
+      } else if (err?.code === 'PGRST200') {
+        setError('Error de relación en la base de datos. Contacta al administrador.');
+        showError('Error de base de datos. Contacta al administrador.');
+      } else {
+        const msg = err?.message || 'Error desconocido al crear el artículo';
+        setError(msg);
+        showError(`Error al crear: ${msg}`);
+      }
     } finally {
       setLoading(false);
     }

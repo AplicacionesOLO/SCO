@@ -1,15 +1,30 @@
 
+export const getCurrencySymbol = (currency: string): string => {
+  return currency === 'USD' ? '$' : '₡';
+};
+
+export const formatCurrencyWithSymbol = (amount: number, currency: string = 'CRC'): string => {
+  if (amount == null || isNaN(amount)) return `${getCurrencySymbol(currency)}0,00`;
+  const symbol = getCurrencySymbol(currency);
+  const formatted = amount.toLocaleString('es-CR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+  return `${symbol}${formatted}`;
+};
+
 export const formatCurrency = (amount: number, currency: string = 'CRC'): string => {
   // Validar null, undefined y NaN
-  if (amount == null || isNaN(amount)) return '0,00';
+  if (amount == null || isNaN(amount)) return getCurrencySymbol(currency) + '0,00';
   
+  const symbol = getCurrencySymbol(currency);
   // Formatear con separador de miles como coma y decimales con punto
   const formatted = amount.toLocaleString('es-CR', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });
   
-  return formatted;
+  return symbol + formatted;
 };
 
 export const formatNumber = (value: number): string => {

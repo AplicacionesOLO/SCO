@@ -4,16 +4,16 @@ import { supabase } from '../../lib/supabase';
 
 interface Cliente {
   id: number;
-  nombre_completo?: string;
-  razon_social?: string;
-  nombre?: string;
+  nombre_razon_social?: string;
   identificacion?: string;
-  cedula?: string;
-  correo?: string;
-  email?: string;
-  telefono?: string;
-  celular?: string;
-  direccion?: string;
+  correo_principal?: string;
+  telefono_numero?: string;
+  telefono_pais?: string;
+  otras_senas?: string;
+  barrio?: string;
+  provincias?: { nombre: string };
+  cantones?: { nombre: string };
+  distritos?: { nombre: string };
 }
 
 interface Producto {
@@ -113,30 +113,28 @@ export default function CotizacionPrintPage() {
         return;
       }
 
-      // 2. Cargar cliente - manejo más robusto
-      let clienteData = null;
-      if (cotizacionData.cliente_id) {
-        const { data: cliente, error: clienteError } = await supabase
-          .from('clientes')
-          .select('*')
-          .eq('id', cotizacionData.cliente_id)
-          .maybeSingle();
+      // 2. Cargar cliente con join en el mismo query (evita problemas de RLS separado)
+      const { data: cotizacionConCliente } = await supabase
+        .from('cotizaciones')
+        .select(`
+          clientes (
+            id,
+            nombre_razon_social,
+            identificacion,
+            correo_principal,
+            telefono_numero,
+            telefono_pais,
+            otras_senas,
+            barrio,
+            provincias (nombre),
+            cantones (nombre),
+            distritos (nombre)
+          )
+        `)
+        .eq('id', cotizacionId)
+        .maybeSingle();
 
-        if (!clienteError && cliente) {
-          clienteData = cliente;
-        } else {
-          console.warn('No se pudo cargar el cliente:', clienteError);
-          // Datos de ejemplo si no se encuentra el cliente
-          clienteData = {
-            id: cotizacionData.cliente_id,
-            razon_social: 'Cliente Ejemplo S.A.',
-            identificacion: '3-101-2562-32',
-            correo: 'cliente@ejemplo.com',
-            telefono: '2205-2525',
-            direccion: 'San José, Costa Rica'
-          };
-        }
-      }
+      const clienteData = (cotizacionConCliente as any)?.clientes || null;
 
       // 3. Cargar items de cotización
       const { data: itemsData, error: itemsError } = await supabase
@@ -292,25 +290,23 @@ export default function CotizacionPrintPage() {
   const impuestoCalculado = subtotalConDescuento * 0.13;
   const impuestoValor = Number(cotizacion.impuestos || cotizacion.impuesto) || impuestoCalculado;
 
-  // Obtener datos del cliente de forma más robusta
-  const nombreCliente = cotizacion.cliente?.razon_social || 
-                       cotizacion.cliente?.nombre_completo || 
-                       cotizacion.cliente?.nombre || 
-                       'Cliente Ejemplo S.A.';
-  
-  const identificacionCliente = cotizacion.cliente?.identificacion || 
-                               cotizacion.cliente?.cedula || 
-                               '3-101-2562-32';
-  
-  const correoCliente = cotizacion.cliente?.correo || 
-                       cotizacion.cliente?.email || 
-                       'cliente@ejemplo.com';
-  
-  const telefonoCliente = cotizacion.cliente?.telefono || 
-                         cotizacion.cliente?.celular || 
-                         '2205-2525';
+  // Obtener datos del cliente usando los campos reales de la BD
+  const nombreCliente = cotizacion.cliente?.nombre_razon_social || 'No especificado';
+  const identificacionCliente = cotizacion.cliente?.identificacion || 'No especificada';
+  const correoCliente = cotizacion.cliente?.correo_principal || 'No especificado';
+  const telefonoCliente = cotizacion.cliente?.telefono_numero
+    ? (cotizacion.cliente.telefono_pais ? `+${cotizacion.cliente.telefono_pais} ${cotizacion.cliente.telefono_numero}` : cotizacion.cliente.telefono_numero)
+    : 'No especificado';
 
-  const direccionCliente = cotizacion.cliente?.direccion || 'San José, Costa Rica';
+  // Construir dirección desde todos los campos disponibles
+  const partesDireccion = [
+    (cotizacion.cliente as any)?.distritos?.nombre,
+    (cotizacion.cliente as any)?.cantones?.nombre,
+    (cotizacion.cliente as any)?.provincias?.nombre,
+    cotizacion.cliente?.barrio,
+    cotizacion.cliente?.otras_senas
+  ].filter(Boolean);
+  const direccionCliente = partesDireccion.length > 0 ? partesDireccion.join(', ') : 'No especificada';
 
   const monedaCotizacion = cotizacion.moneda || 'CRC';
   const simboloMoneda = monedaCotizacion === 'USD' ? '$' : '₡';

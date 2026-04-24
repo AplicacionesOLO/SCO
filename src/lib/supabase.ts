@@ -12,10 +12,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
-    // Configuración simplificada sin flowType problemático
     storage: window.localStorage
   },
-  // Configuración de red mejorada
   global: {
     headers: {
       'X-Client-Info': 'supabase-js-web'
@@ -23,8 +21,22 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 });
 
-// Configurar políticas de confirmación por email
-export const configureEmailConfirmation = async () => {
-  // Esta configuración debe hacerse en el panel de Supabase
-  // Authentication > Settings > Email Confirmation: Enabled
+// Manejar errores de refresh token globalmente
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'TOKEN_REFRESHED') {
+    console.log('[Supabase] Token refrescado correctamente');
+  }
+});
+
+// Función segura para limpiar sesión inválida
+export const clearInvalidSession = async () => {
+  try {
+    await supabase.auth.signOut({ scope: 'local' });
+  } catch {
+    // Limpiar manualmente si signOut falla
+    localStorage.removeItem('sb-' + new URL(supabaseUrl).hostname + '-auth-token');
+    localStorage.removeItem('supabase.auth.token');
+  }
 };
+
+export const configureEmailConfirmation = async () => {};

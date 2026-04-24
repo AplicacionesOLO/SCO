@@ -7,7 +7,7 @@ import React, {
   useCallback,
 } from 'react';
 import { User } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { supabase, clearInvalidSession } from '../lib/supabase';
 
 interface UserProfile {
   id: string;
@@ -439,6 +439,13 @@ function useAuthProvider(): AuthContextType {
         if (!mounted) return;
 
         if (error) {
+          // Si el error es de refresh token inválido, limpiar sesión silenciosamente
+          if (error.message?.includes('Invalid Refresh Token') || 
+              error.message?.includes('Refresh Token Not Found')) {
+            await clearInvalidSession();
+            resetAuth();
+            return;
+          }
           resetAuth();
           return;
         }
@@ -451,8 +458,13 @@ function useAuthProvider(): AuthContextType {
         } else {
           resetAuth();
         }
-      } catch {
+      } catch (err: any) {
         if (!mounted) return;
+        // Si el error es de refresh token, limpiar sesión silenciosamente
+        if (err?.message?.includes('Invalid Refresh Token') || 
+            err?.message?.includes('Refresh Token Not Found')) {
+          await clearInvalidSession();
+        }
         resetAuth();
       }
     };
@@ -462,6 +474,18 @@ function useAuthProvider(): AuthContextType {
     const { data: listener } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (!mounted) return;
+
+        if (event === 'SIGNED_OUT') {
+          resetAuth();
+          return;
+        }
+
+        if (event === 'TOKEN_REFRESHED') {
+          if (session?.user) {
+            setUser(session.user);
+          }
+          return;
+        }
 
         if (session?.user) {
           setUser(session.user);

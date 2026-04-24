@@ -6,16 +6,16 @@ import NotificationPopup from '../../../components/base/NotificationPopup';
 
 interface Cliente {
   id: number;
-  nombre_completo?: string;
-  razon_social?: string;
-  nombre?: string;
+  nombre_razon_social?: string;
   identificacion?: string;
-  cedula?: string;
-  correo?: string;
-  email?: string;
-  telefono?: string;
-  celular?: string;
-  direccion?: string;
+  correo_principal?: string;
+  telefono_numero?: string;
+  telefono_pais?: string;
+  otras_senas?: string;
+  barrio?: string;
+  provincias?: { nombre: string };
+  cantones?: { nombre: string };
+  distritos?: { nombre: string };
 }
 
 interface Producto {
@@ -70,6 +70,7 @@ interface Cotizacion {
   condiciones?: string;
   moneda?: string;
   tipo_cambio?: number;
+  created_by?: string;
   cliente?: Cliente;
   cotizacion_items: CotizacionItem[];
 }
@@ -84,6 +85,7 @@ const CotizacionDetallada: React.FC<CotizacionDetalladaProps> = ({ cotizacionId 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<{ [key: number]: boolean }>({});
+  const [creadorNombre, setCreadorNombre] = useState<string>('');
 
   // Auto-expandir items con BOM cuando se carga la cotización
   useEffect(() => {
@@ -136,10 +138,25 @@ const CotizacionDetallada: React.FC<CotizacionDetalladaProps> = ({ cotizacionId 
       setLoading(true);
       setError(null);
 
-      // 1. Cargar cotización
+      // 1. Cargar cotización con cliente en el mismo query (evita RLS por separado)
       const { data: cotizacionData, error: cotizacionError } = await supabase
         .from('cotizaciones')
-        .select('*')
+        .select(`
+          *,
+          clientes (
+            id,
+            nombre_razon_social,
+            identificacion,
+            correo_principal,
+            telefono_numero,
+            telefono_pais,
+            otras_senas,
+            barrio,
+            provincias (nombre),
+            cantones (nombre),
+            distritos (nombre)
+          )
+        `)
         .eq('id', cotizacionId)
         .maybeSingle();
 
@@ -153,30 +170,23 @@ const CotizacionDetallada: React.FC<CotizacionDetalladaProps> = ({ cotizacionId 
       console.log('[CotizacionDetallada] Cotización cargada:', cotizacionData);
       console.log('[CotizacionDetallada] Estado:', cotizacionData.estado);
 
-      // 2. Cargar cliente - manejo más robusto
-      let clienteData = null;
-      if (cotizacionData.cliente_id) {
-        const { data: cliente, error: clienteError } = await supabase
-          .from('clientes')
-          .select('*')
-          .eq('id', cotizacionData.cliente_id)
-          .maybeSingle();
+      // 2. El cliente ya viene en el join, extraerlo directamente
+      const clienteData = (cotizacionData as any).clientes || null;
+      console.log('[CotizacionDetallada] Cliente cargado por join:', clienteData);
 
-        if (!clienteError && cliente) {
-          clienteData = cliente;
-        } else {
-          console.warn('No se pudo cargar el cliente:', clienteError);
-          // Intentar cargar datos básicos del cliente desde la cotización si están disponibles
-          clienteData = {
-            id: cotizacionData.cliente_id,
-            nombre_completo: 'Cliente no especificado',
-            identificacion: '3-101-2562-32',
-            correo: 'cliente@ejemplo.com',
-            telefono: '2205-2525',
-            direccion: 'San José, Costa Rica'
-          };
+      // 2b. Cargar usuario creador
+      let nombreCreador = '';
+      if (cotizacionData.created_by) {
+        const { data: usuarioCreador } = await supabase
+          .from('usuarios')
+          .select('nombre, email')
+          .eq('id', cotizacionData.created_by)
+          .maybeSingle();
+        if (usuarioCreador) {
+          nombreCreador = usuarioCreador.nombre || usuarioCreador.email || '';
         }
       }
+      setCreadorNombre(nombreCreador);
 
       // 3. Cargar items de cotización
       const { data: itemsData, error: itemsError } = await supabase
@@ -235,8 +245,10 @@ const CotizacionDetallada: React.FC<CotizacionDetalladaProps> = ({ cotizacionId 
 
       console.log('[CotizacionDetallada] Items procesados:', itemsConProductos);
 
+      // Separar el campo clientes del spread para evitar conflicto con cliente
+      const { clientes: _clientes, ...cotizacionSinClientes } = cotizacionData as any;
       setCotizacion({
-        ...cotizacionData,
+        ...cotizacionSinClientes,
         cliente: clienteData,
         cotizacion_items: itemsConProductos
       });
@@ -290,16 +302,8 @@ const CotizacionDetallada: React.FC<CotizacionDetalladaProps> = ({ cotizacionId 
   };
 
   const handleImprimir = () => {
-    try {
-      const printUrl = `${window.location.origin}${window.location.pathname.replace('/detallada', '/print')}`;
-      console.log('Abriendo URL de impresión:', printUrl);
-      window.open(printUrl, '_blank', 'noopener,noreferrer');
-    } catch (error) {
-      console.error('Error al abrir ventana de impresión:', error);
-      // Fallback: intentar con la ruta relativa
-      const fallbackUrl = `/cotizaciones/${cotizacionId}/print`;
-      window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
-    }
+    const printUrl = `${window.location.origin}/cotizaciones/${cotizacionId}/print`;
+    window.open(printUrl, '_blank', 'noopener,noreferrer');
   };
 
   const handleCrearPedido = async () => {
@@ -403,25 +407,23 @@ const CotizacionDetallada: React.FC<CotizacionDetalladaProps> = ({ cotizacionId 
   const impuestoCalculado = subtotalConDescuento * 0.13;
   const impuestoValor = Number(cotizacion.impuestos || cotizacion.impuesto) || impuestoCalculado;
 
-  // Obtener datos del cliente de forma más robusta
-  const nombreCliente = cotizacion.cliente?.razon_social || 
-                       cotizacion.cliente?.nombre_completo || 
-                       cotizacion.cliente?.nombre || 
-                       'Cliente Ejemplo S.A.';
-  
-  const identificacionCliente = cotizacion.cliente?.identificacion || 
-                               cotizacion.cliente?.cedula || 
-                               '3-101-2562-32';
-  
-  const correoCliente = cotizacion.cliente?.correo || 
-                       cotizacion.cliente?.email || 
-                       'cliente@ejemplo.com';
-  
-  const telefonoCliente = cotizacion.cliente?.telefono || 
-                         cotizacion.cliente?.celular || 
-                         '2205-2525';
+  // Obtener datos del cliente de forma más robusta usando campos reales de la BD
+  const nombreCliente = cotizacion.cliente?.nombre_razon_social || 'Cliente no especificado';
+  const identificacionCliente = cotizacion.cliente?.identificacion || 'No especificada';
+  const correoCliente = cotizacion.cliente?.correo_principal || 'No especificado';
+  const telefonoCliente = cotizacion.cliente?.telefono_numero
+    ? (cotizacion.cliente.telefono_pais ? `+${cotizacion.cliente.telefono_pais} ${cotizacion.cliente.telefono_numero}` : cotizacion.cliente.telefono_numero)
+    : 'No especificado';
 
-  const direccionCliente = cotizacion.cliente?.direccion || 'San José, Costa Rica';
+  // Construir dirección desde los campos reales (incluyendo provincia/cantón/distrito)
+  const partesDireccion = [
+    (cotizacion.cliente as any)?.distritos?.nombre,
+    (cotizacion.cliente as any)?.cantones?.nombre,
+    (cotizacion.cliente as any)?.provincias?.nombre,
+    cotizacion.cliente?.barrio,
+    cotizacion.cliente?.otras_senas
+  ].filter(Boolean);
+  const direccionCliente = partesDireccion.length > 0 ? partesDireccion.join(', ') : 'No especificada';
 
   const monedaCotizacion = cotizacion.moneda || 'CRC';
 
@@ -505,6 +507,9 @@ const CotizacionDetallada: React.FC<CotizacionDetalladaProps> = ({ cotizacionId 
             </p>
             {monedaCotizacion === 'USD' && cotizacion.tipo_cambio && (
               <p><span className="font-medium">Tipo de cambio:</span> ₡{cotizacion.tipo_cambio.toLocaleString('es-CR', { minimumFractionDigits: 2 })}</p>
+            )}
+            {creadorNombre && (
+              <p><span className="font-medium">Creado por:</span> {creadorNombre}</p>
             )}
           </div>
         </div>

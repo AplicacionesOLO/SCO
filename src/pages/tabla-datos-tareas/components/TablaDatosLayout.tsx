@@ -26,12 +26,13 @@ export default function TablaDatosLayout({
   onRefresh
 }: TablaDatosLayoutProps) {
   
-  // Agrupar tareas por estado
+  // Agrupar tareas por estado (normalizar Terminado → Finalizado)
   const tareasPorEstado = tareas.reduce((acc, tarea) => {
-    if (!acc[tarea.estado]) {
-      acc[tarea.estado] = [];
+    const estadoNormalizado = tarea.estado === 'Terminado' ? 'Finalizado' : tarea.estado;
+    if (!acc[estadoNormalizado]) {
+      acc[estadoNormalizado] = [];
     }
-    acc[tarea.estado].push(tarea);
+    acc[estadoNormalizado].push(tarea);
     return acc;
   }, {} as Record<string, TareaAnalisis[]>);
 

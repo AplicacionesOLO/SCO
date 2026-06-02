@@ -1,11 +1,11 @@
 import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
 import { showAlert } from '../utils/dialog';
-import type { 
-  TareaAnalisis, 
-  FiltrosTablaDatos, 
+import type {
+  TareaAnalisis,
+  FiltrosTablaDatos,
   TotalesPorCliente,
-  ItemTarea 
+  ItemTarea
 } from '../types/tablaDatosTareas';
 
 /**
@@ -13,13 +13,15 @@ import type {
  * Centraliza datos de producción y productividad
  */
 class TablaDatosTareasService {
-  
+
   /**
    * Obtener tareas para análisis con totales por categoría
+   * OPTIMIZADO: Usa batch queries para evitar N+1
+   * MEJORADO: Busca por inventario_id y producto_id, no solo por descripción exacta
    */
   async getTareasAnalisis(filtros?: FiltrosTablaDatos): Promise<TareaAnalisis[]> {
     try {
-      // Construir query base - Solo columnas que existen en la tabla
+      // 1. Construir query base de tareas
       let query = supabase
         .from('tareas')
         .select(`
@@ -32,16 +34,19 @@ class TablaDatosTareasService {
           entregado_a,
           solicitante_id,
           email_solicitante,
-          datos_formulario
+          datos_formulario,
+          cantidad_personas
         `)
         .order('consecutivo', { ascending: false });
 
       // Aplicar filtros
       if (filtros?.busqueda) {
-        query = query.or(`consecutivo.ilike.%${filtros.busqueda}%,descripcion_breve.ilike.%${filtros.busqueda}%`);
+        const b = filtros.busqueda;
+        query = query.or(
+          `consecutivo.ilike.%${b}%,descripcion_breve.ilike.%${b}%,datos_formulario->>cliente.ilike.%${b}%,datos_formulario->>solicitante.ilike.%${b}%`
+        );
       }
 
-      // FIX: usar nombres de campo correctos del tipo FiltrosTablaDatos
       if (filtros?.fecha_inicio_desde) {
         query = query.gte('fecha_inicio', filtros.fecha_inicio_desde);
       }
@@ -51,203 +56,311 @@ class TablaDatosTareasService {
       }
 
       if (filtros?.estado) {
-        query = query.eq('estado', filtros.estado);
+        if (filtros.estado === 'Finalizado') {
+          query = query.or('estado.eq.Finalizado,estado.eq.Terminado');
+        } else {
+          query = query.eq('estado', filtros.estado);
+        }
       }
 
-      const { data: tareasData, error: tareasError } = await query;
+      // Límite de 500 para proteger al browser sin truncar datos históricos
+      const { data: tareasData, error: tareasError } = await query.limit(500);
 
-      if (tareasError) {
-        throw tareasError;
+      if (tareasError) throw tareasError;
+      if (!tareasData || tareasData.length === 0) return [];
+
+      // Aplicar filtro de cliente en memoria (está en datos_formulario)
+      let tareasFiltradas = tareasData;
+      if (filtros?.cliente && filtros.cliente.trim() !== '') {
+        const clienteFilter = filtros.cliente.toLowerCase();
+        tareasFiltradas = tareasData.filter(t => {
+          const cliente = (t.datos_formulario as any)?.cliente || '';
+          return cliente.toLowerCase().includes(clienteFilter);
+        });
+        if (tareasFiltradas.length === 0) return [];
       }
 
-      // Procesar cada tarea
+      const tareaIds = tareasFiltradas.map(t => t.id);
+
+      // 2. BATCH: Traer TODOS los items de todas las tareas en una sola query
+      const { data: itemsData } = await supabase
+        .from('tareas_items')
+        .select('id, tarea_id, inventario_id, producto_id, descripcion, cantidad, costo_unitario, costo_total')
+        .in('tarea_id', tareaIds);
+
+      // Indexar items por tarea_id
+      const itemsPorTarea: Record<string, typeof itemsData> = {};
+      const descripcionesSet = new Set<string>();
+      const inventarioIds = new Set<number>();
+      const productoIds = new Set<number>();
+
+      (itemsData || []).forEach(item => {
+        if (!itemsPorTarea[item.tarea_id]) itemsPorTarea[item.tarea_id] = [];
+        itemsPorTarea[item.tarea_id].push(item);
+        descripcionesSet.add(item.descripcion);
+        if (item.inventario_id) inventarioIds.add(item.inventario_id);
+        if (item.producto_id) productoIds.add(item.producto_id);
+      });
+
+      const descripciones = Array.from(descripcionesSet);
+
+      // 3. BATCH: Buscar inventarios por ID (inventario_id directo)
+      let inventarioMap = new Map<string | number, { codigo_articulo?: string; categoria_id?: number; unidad_base_id?: number }>();
+
+      // 3a. Buscar por inventario_id directo
+      if (inventarioIds.size > 0) {
+        const idsArray = Array.from(inventarioIds);
+        // Intentar con 'id' primero
+        const { data: inventarioPorId } = await supabase
+          .from('inventario')
+          .select('id, codigo_articulo, descripcion_articulo, categoria_id, unidad_base_id')
+          .in('id', idsArray);
+
+        (inventarioPorId || []).forEach(inv => {
+          if (!inventarioMap.has(inv.id)) {
+            inventarioMap.set(inv.id, {
+              codigo_articulo: inv.codigo_articulo,
+              categoria_id: inv.categoria_id,
+              unidad_base_id: inv.unidad_base_id,
+            });
+          }
+        });
+
+        // Si no encontró nada, intentar con 'id_articulo' como fallback
+        if (inventarioPorId && inventarioPorId.length === 0) {
+          const { data: inventarioPorIdArt } = await supabase
+            .from('inventario')
+            .select('id_articulo, codigo_articulo, descripcion_articulo, categoria_id, unidad_base_id')
+            .in('id_articulo', idsArray);
+
+          (inventarioPorIdArt || []).forEach(inv => {
+            if (!inventarioMap.has(inv.id_articulo)) {
+              inventarioMap.set(inv.id_articulo, {
+                codigo_articulo: inv.codigo_articulo,
+                categoria_id: inv.categoria_id,
+                unidad_base_id: inv.unidad_base_id,
+              });
+            }
+          });
+        }
+      }
+
+      // 3b. Buscar por producto_id → bom_items → inventario
+      let componenteIds: number[] = [];
+      if (productoIds.size > 0) {
+        const { data: bomItems } = await supabase
+          .from('bom_items')
+          .select('id_producto, id_componente')
+          .in('id_producto', Array.from(productoIds));
+
+        if (bomItems && bomItems.length > 0) {
+          componenteIds = [...new Set(bomItems.map(b => b.id_componente).filter(Boolean))];
+        }
+      }
+
+      if (componenteIds.length > 0) {
+        const { data: inventarioPorComponente } = await supabase
+          .from('inventario')
+          .select('id, id_articulo, codigo_articulo, descripcion_articulo, categoria_id, unidad_base_id')
+          .in('id', componenteIds);
+
+        (inventarioPorComponente || []).forEach(inv => {
+          if (!inventarioMap.has(inv.id)) {
+            inventarioMap.set(inv.id, {
+              codigo_articulo: inv.codigo_articulo,
+              categoria_id: inv.categoria_id,
+              unidad_base_id: inv.unidad_base_id,
+            });
+          }
+        });
+
+        // Fallback por id_articulo
+        if (inventarioPorComponente && inventarioPorComponente.length === 0) {
+          const { data: inventarioPorCompIdArt } = await supabase
+            .from('inventario')
+            .select('id_articulo, codigo_articulo, descripcion_articulo, categoria_id, unidad_base_id')
+            .in('id_articulo', componenteIds);
+
+          (inventarioPorCompIdArt || []).forEach(inv => {
+            if (!inventarioMap.has(inv.id_articulo)) {
+              inventarioMap.set(inv.id_articulo, {
+                codigo_articulo: inv.codigo_articulo,
+                categoria_id: inv.categoria_id,
+                unidad_base_id: inv.unidad_base_id,
+              });
+            }
+          });
+        }
+      }
+
+      // 3c. FALLBACK: Buscar por descripción exacta para items que no tienen inventario_id ni producto_id
+      const descripcionesSinMatch = descripciones.filter(d => {
+        // Si algún item con esta descripción tiene inventario_id o producto_id que ya encontramos, no necesitamos fallback
+        const itemsConDescripcion = (itemsData || []).filter(i => i.descripcion === d);
+        return itemsConDescripcion.some(i => {
+          const tieneInventario = i.inventario_id && inventarioMap.has(i.inventario_id);
+          const tieneProducto = i.producto_id && productoIds.has(i.producto_id);
+          return !tieneInventario && !tieneProducto;
+        });
+      });
+
+      if (descripcionesSinMatch.length > 0) {
+        const { data: inventarioExacto } = await supabase
+          .from('inventario')
+          .select('codigo_articulo, descripcion_articulo, categoria_id, unidad_base_id')
+          .in('descripcion_articulo', descripcionesSinMatch);
+
+        (inventarioExacto || []).forEach(inv => {
+          if (!inventarioMap.has(inv.descripcion_articulo)) {
+            inventarioMap.set(inv.descripcion_articulo, {
+              codigo_articulo: inv.codigo_articulo,
+              categoria_id: inv.categoria_id,
+              unidad_base_id: inv.unidad_base_id,
+            });
+          }
+        });
+      }
+
+      // 4. BATCH: Buscar categorías necesarias en una sola query
+      const categoriaIds = new Set<number>();
+      inventarioMap.forEach(inv => {
+        if (inv.categoria_id) categoriaIds.add(inv.categoria_id);
+      });
+
+      const categoriaMap = new Map<number, string>();
+      if (categoriaIds.size > 0) {
+        const { data: categoriasData } = await supabase
+          .from('categorias_inventario')
+          .select('id_categoria, nombre_categoria')
+          .in('id_categoria', Array.from(categoriaIds));
+
+        (categoriasData || []).forEach(c => {
+          categoriaMap.set(c.id_categoria, c.nombre_categoria);
+        });
+      }
+
+      // 5. BATCH: Buscar unidades de medida necesarias en una sola query
+      const unidadIds = new Set<number>();
+      inventarioMap.forEach(inv => {
+        if (inv.unidad_base_id) unidadIds.add(inv.unidad_base_id);
+      });
+
+      const unidadMap = new Map<number, string>();
+      if (unidadIds.size > 0) {
+        const { data: unidadesData } = await supabase
+          .from('unidades_medida')
+          .select('id, simbolo')
+          .in('id', Array.from(unidadIds));
+
+        (unidadesData || []).forEach(u => {
+          unidadMap.set(u.id, u.simbolo);
+        });
+      }
+
+      // 6. Procesar todo en memoria
       const tareasAnalisis: TareaAnalisis[] = [];
 
-      for (const tarea of tareasData || []) {
-        // Obtener nombre del cliente desde datos_formulario
-        const nombreCliente = (tarea.datos_formulario as any)?.cliente || 'Sin cliente';
-
-        // Aplicar filtro de cliente si existe
-        if (filtros?.cliente && filtros.cliente.trim() !== '') {
-          if (!nombreCliente.toLowerCase().includes(filtros.cliente.toLowerCase())) {
-            continue;
-          }
-        }
-
-        // Obtener solicitante desde datos_formulario o email
-        const solicitante = (tarea.datos_formulario as any)?.solicitante || tarea.email_solicitante || 'Sin solicitante';
-
-        // Obtener responsable desde datos_formulario
-        const responsable = (tarea.datos_formulario as any)?.responsable || 'Sin asignar';
-
-        // Obtener items de la tarea
-        const { data: itemsData, error: itemsError } = await supabase
-          .from('tareas_items')
-          .select(`
-            id,
-            descripcion,
-            cantidad,
-            costo_unitario,
-            costo_total
-          `)
-          .eq('tarea_id', tarea.id);
-
-        if (itemsError) {
-          continue;
-        }
-
-        // Para cada item, buscar en inventario por descripción
+      for (const tarea of tareasFiltradas) {
+        const itemsDeTarea = itemsPorTarea[tarea.id] || [];
         const items: ItemTarea[] = [];
         const totalesPorCategoria: Record<string, number> = {};
-        
-        for (const item of itemsData || []) {
-          let categoriaNombre = 'OTROS';
-          let codigoArticulo: string | null = null;
-          let unidadMedida: string | null = null;
 
-          // Buscar en inventario por descripción exacta
-          const { data: inventarioData, error: inventarioError } = await supabase
-            .from('inventario')
-            .select(`
-              id_articulo,
-              codigo_articulo,
-              descripcion_articulo,
-              categoria_id,
-              unidad_base_id
-            `)
-            .eq('descripcion_articulo', item.descripcion)
-            .single();
+        for (const item of itemsDeTarea) {
+          let invData = null;
 
-          if (inventarioError) {
-            // Intentar búsqueda parcial (ILIKE)
-            const { data: inventarioDataPartial, error: inventarioErrorPartial } = await supabase
-              .from('inventario')
-              .select(`
-                id_articulo,
-                codigo_articulo,
-                descripcion_articulo,
-                categoria_id,
-                unidad_base_id
-              `)
-              .ilike('descripcion_articulo', `%${item.descripcion}%`)
-              .limit(1)
-              .single();
-
-            if (!inventarioErrorPartial && inventarioDataPartial) {
-              codigoArticulo = inventarioDataPartial.codigo_articulo;
-
-              // Buscar categoría
-              if (inventarioDataPartial.categoria_id) {
-                const { data: categoriaData, error: categoriaError } = await supabase
-                  .from('categorias_inventario')
-                  .select('nombre_categoria')
-                  .eq('id_categoria', inventarioDataPartial.categoria_id)
-                  .single();
-
-                if (!categoriaError && categoriaData) {
-                  categoriaNombre = categoriaData.nombre_categoria;
-                }
-              }
-
-              // Buscar unidad de medida
-              if (inventarioDataPartial.unidad_base_id) {
-                const { data: unidadData, error: unidadError } = await supabase
-                  .from('unidades_medida')
-                  .select('simbolo')
-                  .eq('id', inventarioDataPartial.unidad_base_id)
-                  .single();
-
-                if (!unidadError && unidadData) {
-                  unidadMedida = unidadData.simbolo;
-                }
-              }
-            }
-          } else if (inventarioData) {
-            codigoArticulo = inventarioData.codigo_articulo;
-
-            // Buscar categoría
-            if (inventarioData.categoria_id) {
-              const { data: categoriaData, error: categoriaError } = await supabase
-                .from('categorias_inventario')
-                .select('nombre_categoria')
-                .eq('id_categoria', inventarioData.categoria_id)
-                .single();
-
-              if (!categoriaError && categoriaData) {
-                categoriaNombre = categoriaData.nombre_categoria;
-              }
-            }
-
-            // Buscar unidad de medida
-            if (inventarioData.unidad_base_id) {
-              const { data: unidadData, error: unidadError } = await supabase
-                .from('unidades_medida')
-                .select('simbolo')
-                .eq('id', inventarioData.unidad_base_id)
-                .single();
-
-              if (!unidadError && unidadData) {
-                unidadMedida = unidadData.simbolo;
-              }
-            }
+          // Buscar por inventario_id directo
+          if (item.inventario_id) {
+            invData = inventarioMap.get(item.inventario_id) || null;
           }
 
-          // Agregar item procesado
+          // Buscar por producto_id → bom_items → inventario
+          if (!invData && item.producto_id) {
+            invData = inventarioMap.get(item.descripcion) || null;
+          }
+
+          // Fallback por descripción exacta
+          if (!invData) {
+            invData = inventarioMap.get(item.descripcion) || null;
+          }
+
+          const categoriaNombre = invData?.categoria_id
+            ? (categoriaMap.get(invData.categoria_id) || 'OTROS')
+            : 'OTROS';
+          const unidadMedida = invData?.unidad_base_id
+            ? unidadMap.get(invData.unidad_base_id)
+            : null;
+
           items.push({
             id: item.id,
+            inventario_id: item.inventario_id,
             descripcion: item.descripcion,
-            codigo_articulo: codigoArticulo,
+            codigo_articulo: invData?.codigo_articulo || null,
             categoria: categoriaNombre,
             unidad_medida: unidadMedida,
             cantidad: item.cantidad,
+            precio_unitario: item.costo_unitario,
             costo_unitario: item.costo_unitario,
+            total: item.costo_total,
             costo_total: item.costo_total,
           });
 
-          // Acumular total por categoría
-          if (!totalesPorCategoria[categoriaNombre]) {
-            totalesPorCategoria[categoriaNombre] = 0;
-          }
-          totalesPorCategoria[categoriaNombre] += item.costo_total;
+          totalesPorCategoria[categoriaNombre] = (totalesPorCategoria[categoriaNombre] || 0) + item.costo_total;
         }
 
-        // Calcular total general
-        const totalGeneral = Object.values(totalesPorCategoria).reduce((sum, val) => sum + val, 0);
+        const totalGeneral = Object.values(totalesPorCategoria).reduce((sum, v) => sum + v, 0);
 
-        // Validar HH si existe
+        // Alerta HH
         let alertaHH: string | undefined;
         if (totalesPorCategoria['HH'] && tarea.fecha_inicio && tarea.fecha_cierre) {
           const fechaInicio = new Date(tarea.fecha_inicio);
           const fechaCierre = new Date(tarea.fecha_cierre);
           const tiempoRealHoras = (fechaCierre.getTime() - fechaInicio.getTime()) / (1000 * 60 * 60);
-          
-          // Calcular horas teóricas desde los items HH
           const itemsHH = items.filter(i => i.categoria === 'HH');
-          const horasTeoricasTotal = itemsHH.reduce((sum, i) => sum + i.cantidad, 0);
+          const horasTeoricas = itemsHH.reduce((sum, i) => sum + i.cantidad, 0);
 
-          if (horasTeoricasTotal > 0) {
-            const diferenciaPorcentaje = Math.abs(tiempoRealHoras - horasTeoricasTotal) / horasTeoricasTotal * 100;
-
-            if (diferenciaPorcentaje > 30) {
-              alertaHH = `⚠️ Las horas cargadas en HH (${horasTeoricasTotal.toFixed(1)}h) difieren ${diferenciaPorcentaje.toFixed(0)}% del tiempo real (${tiempoRealHoras.toFixed(1)}h). Revisar.`;
+          if (horasTeoricas > 0) {
+            const diff = Math.abs(tiempoRealHoras - horasTeoricas) / horasTeoricas * 100;
+            if (diff > 30) {
+              alertaHH = `⚠️ Las horas cargadas en HH (${horasTeoricas.toFixed(1)}h) difieren ${diff.toFixed(0)}% del tiempo real (${tiempoRealHoras.toFixed(1)}h). Revisar.`;
             }
           }
         }
 
-        // Agregar tarea procesada
+        const datosForm = tarea.datos_formulario as any;
+
+        // Calcular cantidad de personas: usar campo directo de la tabla, o fallback a datos_formulario
+        let cantidadPersonas = 0;
+        if (typeof (tarea as any).cantidad_personas === 'number' && (tarea as any).cantidad_personas > 0) {
+          cantidadPersonas = (tarea as any).cantidad_personas;
+        } else if (datosForm?.cantidad_personas) {
+          cantidadPersonas = Number(datosForm.cantidad_personas) || 0;
+        } else if (datosForm?.colaboradores) {
+          if (Array.isArray(datosForm.colaboradores)) {
+            cantidadPersonas = datosForm.colaboradores.length;
+          } else if (typeof datosForm.colaboradores === 'string') {
+            cantidadPersonas = datosForm.colaboradores.split(',').filter((s: string) => s.trim()).length;
+          }
+        } else if (datosForm?.asignado_a) {
+          if (Array.isArray(datosForm.asignado_a)) {
+            cantidadPersonas = datosForm.asignado_a.length;
+          } else if (typeof datosForm.asignado_a === 'string') {
+            cantidadPersonas = datosForm.asignado_a.split(',').filter((s: string) => s.trim()).length;
+          }
+        }
+
         tareasAnalisis.push({
           id: tarea.id,
           caso: tarea.consecutivo,
-          cliente: nombreCliente,
+          cliente: datosForm?.cliente || 'Sin cliente',
           descripcion: tarea.descripcion_breve || '',
-          solicitante: solicitante,
+          solicitante: datosForm?.solicitante || tarea.email_solicitante || 'Sin solicitante',
           inicio: tarea.fecha_inicio,
           cierre: tarea.fecha_cierre,
-          cantidad_personas: 0,
-          responsable: responsable,
+          cantidad_personas: cantidadPersonas,
+          responsable: datosForm?.responsable || 'Sin asignar',
           entregado_a: tarea.entregado_a || '',
           observaciones_va: tarea.descripcion_breve || '',
-          estado: tarea.estado,
+          estado: tarea.estado === 'Terminado' ? 'Finalizado' : tarea.estado,
           items,
           totales_por_categoria: totalesPorCategoria,
           total_general: totalGeneral,
@@ -266,27 +379,78 @@ class TablaDatosTareasService {
 
   /**
    * Obtener totales por cliente
+   * OPTIMIZADO: Query independiente, no usa getTareasAnalisis
    */
   async getTotalesPorCliente(filtros?: FiltrosTablaDatos): Promise<TotalesPorCliente[]> {
     try {
-      const tareas = await this.getTareasAnalisis(filtros);
-      
-      // Agrupar por cliente
-      const totalesPorCliente = tareas.reduce((acc, tarea) => {
-        const cliente = tarea.cliente;
-        if (!acc[cliente]) {
-          acc[cliente] = 0;
-        }
-        acc[cliente] += tarea.total_general;
-        return acc;
-      }, {} as Record<string, number>);
+      // 1. Traer tareas con filtros (solo lo necesario)
+      let query = supabase
+        .from('tareas')
+        .select('id, consecutivo, datos_formulario, estado, fecha_inicio, fecha_cierre')
+        .order('consecutivo', { ascending: false });
 
-      // Convertir a array y ordenar por total descendente
-      const resultado: TotalesPorCliente[] = Object.entries(totalesPorCliente)
+      if (filtros?.busqueda) {
+        const b = filtros.busqueda;
+        query = query.or(
+          `consecutivo.ilike.%${b}%,descripcion_breve.ilike.%${b}%,datos_formulario->>cliente.ilike.%${b}%,datos_formulario->>solicitante.ilike.%${b}%`
+        );
+      }
+      if (filtros?.fecha_inicio_desde) {
+        query = query.gte('fecha_inicio', filtros.fecha_inicio_desde);
+      }
+      if (filtros?.fecha_cierre_hasta) {
+        query = query.lte('fecha_cierre', filtros.fecha_cierre_hasta);
+      }
+      if (filtros?.estado) {
+        if (filtros.estado === 'Finalizado') {
+          query = query.or('estado.eq.Finalizado,estado.eq.Terminado');
+        } else {
+          query = query.eq('estado', filtros.estado);
+        }
+      }
+
+      const { data: tareasData, error } = await query;
+      if (error) throw error;
+      if (!tareasData || tareasData.length === 0) return [];
+
+      // Filtrar cliente en memoria
+      let tareasFiltradas = tareasData;
+      if (filtros?.cliente && filtros.cliente.trim() !== '') {
+        const clienteFilter = filtros.cliente.toLowerCase();
+        tareasFiltradas = tareasData.filter(t => {
+          const cliente = (t.datos_formulario as any)?.cliente || '';
+          return cliente.toLowerCase().includes(clienteFilter);
+        });
+        if (tareasFiltradas.length === 0) return [];
+      }
+
+      const tareaIds = tareasFiltradas.map(t => t.id);
+
+      // 2. Traer todos los items de esas tareas en una sola query
+      const { data: itemsData } = await supabase
+        .from('tareas_items')
+        .select('tarea_id, costo_total')
+        .in('tarea_id', tareaIds);
+
+      // 3. Sumar por cliente en memoria
+      const totalesPorCliente: Record<string, number> = {};
+
+      const itemsPorTarea: Record<string, number> = {};
+      (itemsData || []).forEach(item => {
+        itemsPorTarea[item.tarea_id] = (itemsPorTarea[item.tarea_id] || 0) + item.costo_total;
+      });
+
+      for (const tarea of tareasFiltradas) {
+        const cliente = (tarea.datos_formulario as any)?.cliente || 'Sin cliente';
+        const total = itemsPorTarea[tarea.id] || 0;
+        if (total > 0) {
+          totalesPorCliente[cliente] = (totalesPorCliente[cliente] || 0) + total;
+        }
+      }
+
+      return Object.entries(totalesPorCliente)
         .map(([cliente, total]) => ({ cliente, total }))
         .sort((a, b) => b.total - a.total);
-
-      return resultado;
     } catch (error) {
       throw error;
     }
@@ -300,9 +464,8 @@ class TablaDatosTareasService {
    */
   async exportarExcel(filtros?: FiltrosTablaDatos): Promise<void> {
     try {
-      // Obtener tareas filtradas
       const tareas = await this.getTareasAnalisis(filtros);
-      
+
       if (tareas.length === 0) {
         showAlert('No hay datos para exportar con los filtros aplicados', { type: 'info' });
         return;
@@ -310,34 +473,26 @@ class TablaDatosTareasService {
 
       // Agrupar tareas por estado
       const tareasPorEstado = tareas.reduce((acc, tarea) => {
-        if (!acc[tarea.estado]) {
-          acc[tarea.estado] = [];
-        }
+        if (!acc[tarea.estado]) acc[tarea.estado] = [];
         acc[tarea.estado].push(tarea);
         return acc;
       }, {} as Record<string, TareaAnalisis[]>);
 
       const estados = Object.keys(tareasPorEstado).sort();
 
-      // Obtener todas las categorías únicas de todas las tareas
+      // Obtener todas las categorías únicas
       const categoriasSet = new Set<string>();
-      tareas.forEach(tarea => {
-        Object.keys(tarea.totales_por_categoria || {}).forEach(categoria => {
-          categoriasSet.add(categoria);
-        });
+      tareas.forEach(t => {
+        Object.keys(t.totales_por_categoria || {}).forEach(c => categoriasSet.add(c));
       });
       const categorias = Array.from(categoriasSet).sort();
 
-      // Crear libro de Excel
       const wb = XLSX.utils.book_new();
 
-      // Crear una hoja por cada estado
       estados.forEach(estado => {
         const tareasEstado = tareasPorEstado[estado];
 
-        // Preparar datos para esta hoja
         const datosHoja = tareasEstado.map(tarea => {
-          // FIX: usar tarea.caso (no tarea.consecutivo) y tarea.inicio/tarea.cierre (no tarea.fecha_inicio/tarea.fecha_cierre)
           const fila: Record<string, any> = {
             'Caso': tarea.caso,
             'Cliente': tarea.cliente,
@@ -347,87 +502,57 @@ class TablaDatosTareasService {
             'Cierre': tarea.cierre ? this.formatearFecha(tarea.cierre) : '',
             'Responsable': tarea.responsable,
             'Entregado a': tarea.entregado_a,
-            'Observaciones VA': tarea.observaciones_va
+            'Observaciones VA': tarea.observaciones_va,
           };
 
-          // Columnas dinámicas por categoría
           categorias.forEach(categoria => {
-            const totalCategoria = tarea.totales_por_categoria?.[categoria] || 0;
-            fila[categoria] = totalCategoria;
+            fila[categoria] = tarea.totales_por_categoria?.[categoria] || 0;
           });
 
-          // Columna Total General
           fila['Total General'] = tarea.total_general;
-
           return fila;
         });
 
-        // Crear hoja
         const ws = XLSX.utils.json_to_sheet(datosHoja);
 
-        // Configurar anchos de columna
         const colWidths = [
-          { wch: 15 },  // Caso
-          { wch: 25 },  // Cliente
-          { wch: 40 },  // Descripción
-          { wch: 30 },  // Solicitante
-          { wch: 12 },  // Inicio
-          { wch: 12 },  // Cierre
-          { wch: 25 },  // Responsable
-          { wch: 25 },  // Entregado a
-          { wch: 40 },  // Observaciones VA
-          ...categorias.map(() => ({ wch: 15 })), // Categorías dinámicas
-          { wch: 15 }   // Total General
+          { wch: 15 }, { wch: 25 }, { wch: 40 }, { wch: 30 },
+          { wch: 12 }, { wch: 12 }, { wch: 25 }, { wch: 25 },
+          { wch: 40 },
+          ...categorias.map(() => ({ wch: 15 })),
+          { wch: 15 },
         ];
         ws['!cols'] = colWidths;
 
-        // Aplicar formato de moneda a las columnas de categorías y total
+        // Formato de moneda
         const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-        const columnasMoneda = categorias.length + 1; // +1 para Total General
-        const primeraColumnaMoneda = 9; // Después de "Observaciones VA"
+        const primeraColMoneda = 9;
+        const colsMoneda = categorias.length + 1;
 
         for (let R = range.s.r + 1; R <= range.e.r; ++R) {
-          for (let C = primeraColumnaMoneda; C < primeraColumnaMoneda + columnasMoneda; ++C) {
-            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-            if (ws[cellAddress]) {
-              ws[cellAddress].z = '₡#,##0.00';
-            }
+          for (let C = primeraColMoneda; C < primeraColMoneda + colsMoneda; ++C) {
+            const cell = XLSX.utils.encode_cell({ r: R, c: C });
+            if (ws[cell]) ws[cell].z = '₡#,##0.00';
           }
         }
 
-        // Agregar hoja al libro (nombre de hoja limitado a 31 caracteres)
-        const nombreHoja = estado.substring(0, 31);
-        XLSX.utils.book_append_sheet(wb, ws, nombreHoja);
+        XLSX.utils.book_append_sheet(wb, ws, estado.substring(0, 31));
       });
 
-      // Generar nombre de archivo con fecha y filtros
       const fecha = new Date().toISOString().split('T')[0];
       let nombreArchivo = `analisis_tareas_${fecha}`;
-      
-      if (filtros?.estado) {
-        nombreArchivo += `_${filtros.estado.replace(/\s+/g, '_')}`;
-      }
-      // FIX: usar filtros.cliente (no filtros.cliente_id)
-      if (filtros?.cliente) {
-        nombreArchivo += `_${filtros.cliente.replace(/\s+/g, '_')}`;
-      }
-      
+      if (filtros?.estado) nombreArchivo += `_${filtros.estado.replace(/\s+/g, '_')}`;
+      if (filtros?.cliente) nombreArchivo += `_${filtros.cliente.replace(/\s+/g, '_')}`;
       nombreArchivo += '.xlsx';
 
-      // Descargar archivo
       XLSX.writeFile(wb, nombreArchivo);
-
     } catch (error) {
       throw error;
     }
   }
 
-  /**
-   * Formatear fecha para Excel (sin problema de timezone)
-   */
   private formatearFecha(fecha: string): string {
     try {
-      // Si es solo YYYY-MM-DD, parsear como hora local (no UTC)
       const date = /^\d{4}-\d{2}-\d{2}$/.test(fecha)
         ? new Date(`${fecha}T00:00:00`)
         : new Date(fecha);
@@ -451,13 +576,11 @@ class TablaDatosTareasService {
         .eq('id', itemId);
 
       if (error) throw error;
-
     } catch (error) {
       throw error;
     }
   }
 }
 
-// Exportar instancia del servicio
 export const tablaDatosTareasService = new TablaDatosTareasService();
 export default tablaDatosTareasService;

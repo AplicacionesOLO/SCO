@@ -100,7 +100,6 @@ export default function TablaDatosFiltros({ filtros, onFiltroChange }: TablaDato
             <option value="En Proceso">En Proceso</option>
             <option value="Produciendo">Produciendo</option>
             <option value="Esperando suministros">Esperando suministros</option>
-            <option value="Terminado">Terminado</option>
             <option value="Finalizado">Finalizado</option>
           </select>
         </div>

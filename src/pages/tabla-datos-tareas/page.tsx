@@ -35,19 +35,32 @@ export default function TablaDatosTareasPage() {
     try {
       setLoading(true);
       
-      const [tareasData, totalesData] = await Promise.all([
-        tablaDatosTareasService.getTareasAnalisis(filtros),
-        tablaDatosTareasService.getTotalesPorCliente(filtros)
-      ]);
+      // Ahora solo cargamos tareas una vez — los totales se calculan en memoria
+      const tareasData = await tablaDatosTareasService.getTareasAnalisis(filtros);
       
       setTareas(tareasData);
-      setTotalesPorCliente(totalesData);
       
-      const total = totalesData.reduce((sum, cliente) => sum + cliente.total, 0);
-      setTotalGeneral(total);
+      // Calcular totales por cliente en memoria (evita query duplicada)
+      const totalesMap: Record<string, number> = {};
+      let general = 0;
       
-    } catch (error) {
-      showAlert('Error al cargar los datos de análisis');
+      for (const tarea of tareasData) {
+        const cliente = tarea.cliente || 'Sin cliente';
+        totalesMap[cliente] = (totalesMap[cliente] || 0) + tarea.total_general;
+        general += tarea.total_general;
+      }
+      
+      const totalesArray: TotalesPorCliente[] = Object.entries(totalesMap)
+        .map(([cliente, total]) => ({ cliente, total }))
+        .sort((a, b) => b.total - a.total);
+      
+      setTotalesPorCliente(totalesArray);
+      setTotalGeneral(general);
+      
+    } catch (error: any) {
+      console.error('Error en cargarDatos:', error);
+      const mensaje = error?.message || error?.error_description || 'Error al cargar los datos de análisis';
+      showAlert(mensaje);
     } finally {
       setLoading(false);
     }

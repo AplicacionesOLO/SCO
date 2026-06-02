@@ -41,9 +41,8 @@ export default function TablaPorEstado({ estado, tareas }: TablaPorEstadoProps) 
       case 'Esperando suministros':
         return 'bg-orange-100 text-orange-800 border-orange-300';
       case 'Terminado':
-        return 'bg-green-100 text-green-800 border-green-300';
       case 'Finalizado':
-        return 'bg-gray-100 text-gray-800 border-gray-300';
+        return 'bg-green-100 text-green-800 border-green-300';
       default:
         return 'bg-gray-100 text-gray-800 border-gray-300';
     }

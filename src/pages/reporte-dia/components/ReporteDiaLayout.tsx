@@ -19,7 +19,7 @@ interface Props {
   children: ReactNode;
 }
 
-const ESTADOS = ['En Cola', 'En Proceso', 'Produciendo', 'Esperando suministros', 'Terminado', 'Finalizado'];
+const ESTADOS = ['En Cola', 'En Proceso', 'Produciendo', 'Esperando suministros', 'Finalizado'];
 
 export default function ReporteDiaLayout({
   colaborador,

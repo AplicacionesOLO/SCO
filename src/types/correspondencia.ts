@@ -5,6 +5,7 @@ export type EventoTrigger =
   | 'tarea.creada'
   | 'tarea.estado_cambiado'
   | 'tarea.finalizada'
+  | 'tarea.comentario_agregado'
   | 'cotizacion.creada'
   | 'pedido.creado'
   | 'pedido.estado_cambiado';

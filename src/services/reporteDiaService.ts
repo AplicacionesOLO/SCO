@@ -212,14 +212,15 @@ class ReporteDiaService {
 
   /**
    * Obtener métricas de todos los colaboradores de la tienda (para Admin/Supervisor)
+   * Si tiendaId es null, trae métricas de todas las tiendas.
    */
   async getMetricasColaboradores(
-    tiendaId: string,
+    tiendaId: string | null,
     fechaDesde: string,
     fechaHasta: string
   ): Promise<MetricaColaborador[]> {
     try {
-      const { data: reportes, error } = await supabase
+      let query = supabase
         .from('tareas_reportes_colaboradores')
         .select(`
           colaborador_id,
@@ -227,9 +228,14 @@ class ReporteDiaService {
           horas_trabajadas,
           unidades_procesadas
         `)
-        .eq('tienda_id', tiendaId)
         .gte('fecha_trabajo', fechaDesde)
         .lte('fecha_trabajo', fechaHasta);
+
+      if (tiendaId) {
+        query = query.eq('tienda_id', tiendaId);
+      }
+
+      const { data: reportes, error } = await query;
 
       if (error || !reportes?.length) return [];
 
@@ -284,14 +290,15 @@ class ReporteDiaService {
 
   /**
    * Obtener detalle completo para exportación (incluye tipo_trabajo por tarea)
+   * Si tiendaId es null, trae detalle de todas las tiendas.
    */
   async getDetalleCompletoParaExport(
-    tiendaId: string,
+    tiendaId: string | null,
     fechaDesde: string,
     fechaHasta: string
   ): Promise<DetalleReporteExport[]> {
     try {
-      const { data: reportes, error } = await supabase
+      let query = supabase
         .from('tareas_reportes_colaboradores')
         .select(`
           colaborador_id,
@@ -303,9 +310,14 @@ class ReporteDiaService {
           observaciones,
           tarea_id
         `)
-        .eq('tienda_id', tiendaId)
         .gte('fecha_trabajo', fechaDesde)
         .lte('fecha_trabajo', fechaHasta);
+
+      if (tiendaId) {
+        query = query.eq('tienda_id', tiendaId);
+      }
+
+      const { data: reportes, error } = await query;
 
       if (error || !reportes?.length) return [];
 

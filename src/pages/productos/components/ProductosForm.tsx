@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
 import { formatCurrency } from '../../../lib/currency';
-import { showSuccess, showError } from '../../../utils/dialog';
+import { showSuccess, showError, showWarning } from '../../../utils/dialog';
 import BuscarArticuloModal from './BuscarArticuloModal';
-import BOMTable from './BOMTable';
+import BOMTable, { BOMTableHandle } from './BOMTable';
 
 interface Producto {
   id_producto?: number;
@@ -23,6 +23,7 @@ interface BOMItem {
   unidad_id: number;
   precio_unitario_base: number;
   precio_ajustado: number;
+  precio_anterior?: number;
   categoria_nombre?: string;
   unidad_nombre?: string;
   unidad_simbolo?: string;
@@ -54,6 +55,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [costoTotal, setCostoTotal] = useState(0);
+  const bomTableRef = useRef<BOMTableHandle>(null);
 
   useEffect(() => {
     cargarCategorias();
@@ -213,7 +215,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
         .from('bom_items')
         .select(`
           *,
-          inventario:inventario!id_componente(descripcion_articulo, categoria:categorias_inventario(nombre_categoria)),
+          inventario:inventario!id_componente(descripcion_articulo, precio_articulo, categoria:categorias_inventario(nombre_categoria)),
           unidad_medida:unidades_medida!unidad_id(nombre, simbolo)
         `)
         .eq('product_id', productoId);
@@ -224,18 +226,30 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
       }
 
       if (data) {
-        const items = data.map(item => ({
-          id: item.id,
-          id_componente: item.id_componente,
-          nombre_componente: item.nombre_componente,
-          cantidad_x_unidad: item.cantidad_x_unidad,
-          unidad_id: item.unidad_id,
-          precio_unitario_base: item.precio_unitario_base,
-          precio_ajustado: item.precio_ajustado,
-          categoria_nombre: item.inventario?.categoria?.nombre_categoria,
-          unidad_nombre: item.unidad_medida?.nombre,
-          unidad_simbolo: item.unidad_medida?.simbolo
-        }));
+        const items = data.map(item => {
+          const precioActualInventario = item.inventario?.precio_articulo ?? item.precio_unitario_base;
+          const precioBaseGuardado = item.precio_unitario_base;
+          const precioCambio = Math.abs(precioActualInventario - precioBaseGuardado) > 0.001;
+          
+          // Recalcular precio_ajustado proporcionalmente si el precio base cambió
+          const precioAjustado = precioCambio && precioBaseGuardado > 0
+            ? (item.precio_ajustado / precioBaseGuardado) * precioActualInventario
+            : item.precio_ajustado;
+          
+          return {
+            id: item.id,
+            id_componente: item.id_componente,
+            nombre_componente: item.nombre_componente,
+            cantidad_x_unidad: item.cantidad_x_unidad,
+            unidad_id: item.unidad_id,
+            precio_unitario_base: precioActualInventario,
+            precio_ajustado: precioAjustado,
+            precio_anterior: precioCambio ? precioBaseGuardado : undefined,
+            categoria_nombre: item.inventario?.categoria?.nombre_categoria,
+            unidad_nombre: item.unidad_medida?.nombre,
+            unidad_simbolo: item.unidad_medida?.simbolo
+          };
+        });
         setBomItems(items);
       }
     } catch (err) {
@@ -415,9 +429,8 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
           descripcion_producto: formData.descripcion_producto,
           categoria_id: parseInt(formData.categoria_id),
           codigo_sistema: formData.codigo_sistema,
-          costo_total_bom: costoTotal,
         };
-        // Solo incluir moneda si el backend la soporta
+        // Solo incluir campos que existan en la BD
         if (formData.moneda) {
           updateData.moneda = formData.moneda;
         }
@@ -431,9 +444,16 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
           .single();
 
         if (updateError) {
-          // Si falla por columna moneda no existente, reintentar sin ella
-          if (updateError.code === 'PGRST204' && updateError.message?.includes('moneda')) {
-            delete updateData.moneda;
+          // Si falla por columna no existente, reintentar sin esa columna
+          if (updateError.code === 'PGRST204') {
+            const errMsg = updateError.message || '';
+            if (errMsg.includes('moneda')) {
+              delete updateData.moneda;
+            } else if (errMsg.includes('costo_total_bom')) {
+              delete updateData.costo_total_bom;
+            } else {
+              throw updateError;
+            }
             const { data: retryData, error: retryError } = await supabase
               .from('productos')
               .update(updateData)
@@ -442,9 +462,9 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
               .select()
               .single();
             if (retryError) throw retryError;
-            if (!retryData) throw new Error('No se recibió respuesta al actualizar el producto');
+            if (!retryData) throw new Error('No se recibió respuesta al actualizar el producto (reintento)');
             productoId = retryData.id_producto;
-            showError('Aviso: la columna "moneda" no existe en la base de datos. Ejecuta el SQL sql_agregar_moneda_productos.sql en Supabase para habilitarla.');
+            showWarning('La columna no existe en la base de datos. Ejecuta el SQL correspondiente en Supabase para habilitarla.');
           } else {
             throw updateError;
           }
@@ -470,10 +490,9 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
           descripcion_producto: formData.descripcion_producto,
           categoria_id: parseInt(formData.categoria_id),
           codigo_sistema: formData.codigo_sistema,
-          costo_total_bom: costoTotal,
           tienda_id: currentStore.id,
         };
-        // Solo incluir moneda si el backend la soporta
+        // Solo incluir campos que existan en la BD
         if (formData.moneda) {
           insertData.moneda = formData.moneda;
         }
@@ -485,18 +504,25 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
           .single();
 
         if (insertError) {
-          // Si falla por columna moneda no existente, reintentar sin ella
-          if (insertError.code === 'PGRST204' && insertError.message?.includes('moneda')) {
-            delete insertData.moneda;
+          // Si falla por columna no existente, reintentar sin esa columna
+          if (insertError.code === 'PGRST204') {
+            const errMsg = insertError.message || '';
+            if (errMsg.includes('moneda')) {
+              delete insertData.moneda;
+            } else if (errMsg.includes('costo_total_bom')) {
+              delete insertData.costo_total_bom;
+            } else {
+              throw insertError;
+            }
             const { data: retryData, error: retryError } = await supabase
               .from('productos')
               .insert(insertData)
               .select()
               .single();
             if (retryError) throw retryError;
-            if (!retryData) throw new Error('No se recibió respuesta al crear el producto');
+            if (!retryData) throw new Error('No se recibió respuesta al crear el producto (reintento)');
             productoId = retryData.id_producto;
-            showError('Aviso: la columna "moneda" no existe en la base de datos. Ejecuta el SQL sql_agregar_moneda_productos.sql en Supabase para habilitarla.');
+            showWarning('La columna no existe en la base de datos. Ejecuta el SQL correspondiente en Supabase para habilitarla.');
           } else {
             throw insertError;
           }
@@ -504,6 +530,11 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
           if (!data) throw new Error('No se recibió respuesta al crear el producto');
           productoId = data.id_producto;
         }
+      }
+
+      // Auto-commitear cualquier edición pendiente en la tabla BOM
+      if (bomTableRef.current) {
+        bomTableRef.current.commitPendingEdit();
       }
 
       // Guardar componentes del BOM si existen
@@ -617,11 +648,18 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
   const editarComponente = (index: number, cantidad: number, unidadId: number, precioAjustado: number) => {
     const items = [...bomItems];
     if (index >= 0 && index < items.length) {
+      const item = items[index];
+      // Recalcular precio_ajustado proporcionalmente si cambió la cantidad
+      const cantidadAnterior = item.cantidad_x_unidad;
+      const nuevoPrecioAjustado = cantidadAnterior > 0
+        ? (precioAjustado / cantidadAnterior) * cantidad
+        : precioAjustado;
+      
       items[index] = {
-        ...items[index],
+        ...item,
         cantidad_x_unidad: cantidad,
         unidad_id: unidadId,
-        precio_ajustado: precioAjustado
+        precio_ajustado: nuevoPrecioAjustado
       };
       setBomItems(items);
     }
@@ -787,9 +825,11 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
               </div>
 
               <BOMTable
+                ref={bomTableRef}
                 items={bomItems}
                 onEliminar={eliminarComponente}
                 onEditar={editarComponente}
+                moneda={formData.moneda}
               />
 
               {bomItems.length > 0 && (
@@ -797,7 +837,7 @@ export default function ProductosForm({ producto, onGuardar, onCerrar }: Props) 
                   <div className="flex justify-between items-center">
                     <span className="font-medium text-blue-900">Costo Total del Producto:</span>
                     <span className="text-xl font-bold text-blue-900">
-                      {formatCurrency(costoTotal)}
+                      {formatCurrency(costoTotal, formData.moneda)}
                     </span>
                   </div>
                   <p className="text-xs text-blue-700 mt-1">

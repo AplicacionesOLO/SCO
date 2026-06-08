@@ -200,7 +200,7 @@ export default function ReporteDiaPage() {
           tabActivo={tabActivo}
           onTabChange={setTabActivo}
         >
-          {tabActivo === 'metricas' && puedeVerMetricas && tiendaId ? (
+          {tabActivo === 'metricas' && puedeVerMetricas ? (
             <MetricasColaboradores tiendaId={tiendaId} />
           ) : (
             renderMisTareas()

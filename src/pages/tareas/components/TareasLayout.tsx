@@ -103,11 +103,6 @@ export default function TareasLayout({
             <div className="text-xs text-gray-500 mt-1">Esperando</div>
           </div>
           
-          <div className="bg-white rounded-lg border border-gray-300 p-4 border-l-4 border-l-green-500">
-            <div className="text-2xl font-bold text-gray-900">{stats.terminado}</div>
-            <div className="text-xs text-gray-500 mt-1">Terminado</div>
-          </div>
-          
           <div className="bg-white rounded-lg border border-gray-300 p-4 border-l-4 border-l-gray-600">
             <div className="text-2xl font-bold text-gray-900">{stats.finalizado}</div>
             <div className="text-xs text-gray-500 mt-1">Finalizado</div>

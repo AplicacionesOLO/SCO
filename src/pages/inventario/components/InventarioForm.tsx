@@ -653,7 +653,7 @@ export default function InventarioForm({
         `El artículo ${dataToSave.cod_barras ? 'con código de barras ' + dataToSave.cod_barras : ''} ha sido ${articulo ? 'actualizado' : 'creado'} exitosamente`
       );
 
-      onSave(dataToSave);
+      onSave(result.data?.[0] || dataToSave);
     } catch (error: any) {
       console.error('❌ [GUARDAR] Error guardando artículo:', error);
 

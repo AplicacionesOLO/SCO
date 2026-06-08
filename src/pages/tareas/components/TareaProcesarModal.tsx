@@ -60,7 +60,6 @@ const ESTADOS: TareaEstado[] = [
   'En Proceso',
   'Produciendo',
   'Esperando suministros',
-  'Terminado',
   'Finalizado'
 ];
 

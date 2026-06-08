@@ -134,6 +134,10 @@ export const PERMISSIONS = {
   'tareas:manage': 'Gestionar encargados y colaboradores',
   'tareas:export': 'Exportar datos de tareas',
 
+  // Monitor (Visualizador)
+  'monitor:view': 'Ver monitor de tareas por cluster',
+  'monitor:comment': 'Agregar comentarios en el monitor',
+
   // Optimizador de Cortes 2D
   'optimizador:view': 'Ver módulo de optimizador',
   'optimizador:create': 'Crear proyectos de optimización',
@@ -316,6 +320,13 @@ export const PERMISSION_GROUPS = {
     // Optimizador
     'optimizador:view',
     // Perfil
+    'perfil:view', 'perfil:edit', 'perfil:password'
+  ],
+
+  'Visualizador': [
+    // Solo acceso al monitor
+    'monitor:view', 'monitor:comment',
+    // Perfil básico
     'perfil:view', 'perfil:edit', 'perfil:password'
   ]
 };

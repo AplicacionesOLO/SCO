@@ -3,7 +3,7 @@ import { reporteDiaService, type MetricaColaborador } from '../../../services/re
 import { exportarMetricasExcel } from '../../../utils/exportMetricasExcel';
 
 interface Props {
-  tiendaId: string;
+  tiendaId: string | null;
 }
 
 const ESTANDAR_HORAS = 7.5;

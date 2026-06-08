@@ -49,7 +49,6 @@ export type TareaEstado =
   | 'En Proceso' 
   | 'Produciendo' 
   | 'Esperando suministros' 
-  | 'Terminado' 
   | 'Finalizado';
 
 export interface TareaItem {

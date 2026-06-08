@@ -1,5 +1,4 @@
-
-import { useState } from 'react';
+import { useState, forwardRef, useImperativeHandle } from 'react';
 import { formatCurrency } from '../../../lib/currency';
 
 interface BOMItem {
@@ -10,6 +9,7 @@ interface BOMItem {
   unidad_id: number;
   precio_unitario_base: number;
   precio_ajustado: number;
+  precio_anterior?: number;
   categoria_nombre?: string;
   unidad_nombre?: string;
   unidad_simbolo?: string;
@@ -19,15 +19,37 @@ interface Props {
   items: BOMItem[];
   onEliminar: (index: number) => void;
   onEditar: (index: number, cantidad: number, unidadId: number, precioAjustado: number) => void;
+  moneda?: string;
 }
 
-export default function BOMTable({ items, onEliminar, onEditar }: Props) {
+export interface BOMTableHandle {
+  commitPendingEdit: () => boolean;
+}
+
+const BOMTable = forwardRef<BOMTableHandle, Props>(function BOMTable({ items, onEliminar, onEditar, moneda = 'CRC' }, ref) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editData, setEditData] = useState({
     cantidad: '',
     unidadId: '',
     precioAjustado: 0
   });
+
+  const commitPendingEdit = (): boolean => {
+    if (editingIndex === null) return true;
+    const cantidad = parseFloat(editData.cantidad);
+    const unidadId = parseInt(editData.unidadId);
+    if (cantidad > 0 && !isNaN(unidadId)) {
+      onEditar(editingIndex, cantidad, unidadId, editData.precioAjustado);
+      setEditingIndex(null);
+      setEditData({ cantidad: '', unidadId: '', precioAjustado: 0 });
+      return true;
+    }
+    return false;
+  };
+
+  useImperativeHandle(ref, () => ({
+    commitPendingEdit
+  }));
 
   const iniciarEdicion = (e: React.MouseEvent, index: number, item: BOMItem) => {
     e.preventDefault();
@@ -47,7 +69,7 @@ export default function BOMTable({ items, onEliminar, onEditar }: Props) {
       const cantidad = parseFloat(editData.cantidad);
       const unidadId = parseInt(editData.unidadId);
       
-      if (cantidad > 0 && unidadId) {
+      if (cantidad > 0 && !isNaN(unidadId)) {
         onEditar(editingIndex, cantidad, unidadId, editData.precioAjustado);
         cancelarEdicion();
       }
@@ -72,7 +94,7 @@ export default function BOMTable({ items, onEliminar, onEditar }: Props) {
   if (items.length === 0) {
     return (
       <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-        <i className="ri-list-check-line text-3xl text-gray-400 mb-2"></i>
+        <i className="ri-file-list-line text-3xl text-gray-400 mb-2"></i>
         <h3 className="text-lg font-medium text-gray-900 mb-1">Sin componentes BOM</h3>
         <p className="text-gray-500">Agrega componentes para construir la lista de materiales</p>
       </div>
@@ -102,6 +124,9 @@ export default function BOMTable({ items, onEliminar, onEditar }: Props) {
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Precio Unitario
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Total Componente
               </th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Acciones
@@ -152,11 +177,16 @@ export default function BOMTable({ items, onEliminar, onEditar }: Props) {
                   )}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-green-600">
-                    {formatCurrency(item.precio_ajustado)}
+                  <div className="text-sm font-semibold text-gray-900">
+                    {formatCurrency(item.precio_unitario_base, moneda)}
                   </div>
-                  <div className="text-xs text-gray-500">
-                    Base: {formatCurrency(item.precio_unitario_base)}
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap">
+                  <div className="text-sm font-semibold text-green-600">
+                    {formatCurrency(item.precio_ajustado, moneda)}
+                  </div>
+                  <div className="text-xs text-gray-400">
+                    {item.cantidad_x_unidad.toLocaleString('es-ES', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} × {formatCurrency(item.precio_unitario_base, moneda)}
                   </div>
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -207,4 +237,6 @@ export default function BOMTable({ items, onEliminar, onEditar }: Props) {
       </div>
     </div>
   );
-}
+});
+
+export default BOMTable;

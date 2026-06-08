@@ -112,6 +112,12 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       role: 'Admin'
     },
     {
+      name: 'Monitor',
+      icon: 'ri-eye-line',
+      path: '/monitor',
+      permission: 'monitor:view'
+    },
+    {
       name: 'Perfil',
       icon: 'ri-user-settings-line',
       path: '/perfil',

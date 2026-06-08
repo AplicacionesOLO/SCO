@@ -363,7 +363,7 @@ class TareaService {
         en_proceso: data?.filter(t => t.estado === 'En Proceso').length || 0,
         produciendo: data?.filter(t => t.estado === 'Produciendo').length || 0,
         esperando_suministros: data?.filter(t => t.estado === 'Esperando suministros').length || 0,
-        terminado: data?.filter(t => t.estado === 'Terminado').length || 0,
+        terminado: 0,
         finalizado: data?.filter(t => t.estado === 'Finalizado').length || 0
       };
 

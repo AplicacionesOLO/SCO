@@ -20,9 +20,10 @@ interface Props {
   onEdit: (producto: Producto) => void;
   onEliminar: (id: number) => void;
   onInactivar: (id: number) => void;
+  onDuplicar: (id: number) => void;
 }
 
-export default function ProductosTable({ productos, loading, onEdit, onEliminar, onInactivar }: Props) {
+export default function ProductosTable({ productos, loading, onEdit, onEliminar, onInactivar, onDuplicar }: Props) {
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full divide-y divide-gray-200">
@@ -128,6 +129,16 @@ export default function ProductosTable({ productos, loading, onEdit, onEliminar,
                     className="text-blue-600 hover:bg-blue-50"
                   >
                     <i className="ri-edit-line w-4 h-4 flex items-center justify-center"></i>
+                  </PermissionButton>
+                  
+                  <PermissionButton
+                    permission="productos:create"
+                    variant="icon"
+                    onClick={() => onDuplicar(producto.id_producto)}
+                    title="Duplicar producto"
+                    className="text-purple-600 hover:bg-purple-50"
+                  >
+                    <i className="ri-file-copy-line w-4 h-4 flex items-center justify-center"></i>
                   </PermissionButton>
                   
                   <PermissionButton

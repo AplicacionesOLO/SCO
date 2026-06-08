@@ -26,6 +26,7 @@ const SeguridadPage = lazy(() => import('../pages/seguridad/page'));
 const PerfilPage = lazy(() => import('../pages/perfil/page'));
 const CostBotAdminPage = lazy(() => import('../components/costbot/CostBotAdmin'));
 const ReporteDiaPage = lazy(() => import('../pages/reporte-dia/page'));
+const MonitorPage = lazy(() => import('../pages/monitor/page'));
 
 // Páginas de autenticación
 const LoginPage = lazy(() => import('../pages/auth/LoginPage'));
@@ -201,6 +202,14 @@ const routes: RouteObject[] = [
     element: (
       <ProtectedRoute requireAuth permission="tareas:view">
         <TareasPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/monitor',
+    element: (
+      <ProtectedRoute requireAuth permission="monitor:view">
+        <MonitorPage />
       </ProtectedRoute>
     ),
   },

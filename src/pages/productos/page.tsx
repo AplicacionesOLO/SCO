@@ -113,7 +113,7 @@ export default function ProductosPage() {
         .select(`
           *,
           categorias(nombre),
-          costo_total_bom:bom_items(precio_ajustado)
+          bom_items:bom_items!product_id(*, inventario:inventario!id_componente(precio_articulo))
         `)
         .eq('tienda_id', currentStore.id)
         .range(desde, hasta);
@@ -139,9 +139,20 @@ export default function ProductosPage() {
       
       if (error) throw error;
       
-      // Calcular el costo total BOM para cada producto
+      // Calcular el costo total BOM usando precios ACTUALES de inventario
       const productosConCosto = (data || []).map(producto => {
-        const costoTotal = producto.costo_total_bom?.reduce((sum: number, item: any) => sum + (item.precio_ajustado || 0), 0) || 0;
+        const itemsBOM = producto.bom_items || [];
+        const costoTotal = itemsBOM.reduce((sum: number, item: any) => {
+          const precioActualInventario = item.inventario?.precio_articulo ?? item.precio_unitario_base;
+          const precioBaseGuardado = item.precio_unitario_base;
+          const precioCambio = Math.abs(precioActualInventario - precioBaseGuardado) > 0.001;
+          
+          const precioAjustado = precioCambio && precioBaseGuardado > 0
+            ? (item.precio_ajustado / precioBaseGuardado) * precioActualInventario
+            : (item.precio_ajustado || 0);
+          
+          return sum + precioAjustado;
+        }, 0);
         return {
           ...producto,
           costo_total_bom: costoTotal
@@ -221,6 +232,124 @@ export default function ProductosPage() {
   const handleEditarProducto = (producto: Producto) => {
     setEditingProducto(producto);
     setShowForm(true);
+  };
+
+  const handleDuplicarProducto = async (id: number) => {
+    if (!currentStore?.id) return;
+
+    if (!(await showConfirm('¿Duplicar este producto con todos sus componentes BOM? Se creará una copia exacta con nuevo código.', { title: 'Duplicar producto' }))) return;
+
+    try {
+      setLoading(true);
+
+      // 1. Obtener producto original
+      const { data: original, error: fetchError } = await supabase
+        .from('productos')
+        .select('*')
+        .eq('id_producto', id)
+        .eq('tienda_id', currentStore.id)
+        .single();
+
+      if (fetchError || !original) {
+        showAlert('Error al obtener el producto original');
+        return;
+      }
+
+      // 2. Obtener BOM items originales
+      const { data: bomOriginal } = await supabase
+        .from('bom_items')
+        .select('*')
+        .eq('product_id', id);
+
+      // 3. Generar nuevo código de producto
+      const { data: ultimoProd } = await supabase
+        .from('productos')
+        .select('codigo_producto')
+        .eq('tienda_id', currentStore.id)
+        .like('codigo_producto', 'PROD-%')
+        .order('codigo_producto', { ascending: false })
+        .limit(1);
+
+      let siguiente = 1;
+      if (ultimoProd && ultimoProd.length > 0 && ultimoProd[0].codigo_producto) {
+        const match = ultimoProd[0].codigo_producto.match(/PROD-(\d+)/);
+        if (match) {
+          const num = parseInt(match[1]);
+          if (!isNaN(num)) siguiente = num + 1;
+        }
+      }
+      const nuevoCodigo = `PROD-${siguiente.toString().padStart(3, '0')}`;
+
+      // 4. Generar nuevo código de sistema
+      const { data: ultimoSist } = await supabase
+        .from('productos')
+        .select('codigo_sistema')
+        .eq('tienda_id', currentStore.id)
+        .not('codigo_sistema', 'is', null)
+        .order('codigo_sistema', { ascending: false })
+        .limit(1);
+
+      let sigSistema = 1;
+      if (ultimoSist && ultimoSist.length > 0 && ultimoSist[0].codigo_sistema) {
+        const num = parseInt(ultimoSist[0].codigo_sistema);
+        if (!isNaN(num)) sigSistema = num + 1;
+      }
+      const nuevoCodigoSistema = sigSistema.toString().padStart(6, '0');
+
+      // 5. Crear nuevo producto
+      const { data: nuevo, error: insertError } = await supabase
+        .from('productos')
+        .insert({
+          codigo_producto: nuevoCodigo,
+          descripcion_producto: (original as any).descripcion_producto + ' (copia)',
+          categoria_id: original.categoria_id,
+          codigo_sistema: nuevoCodigoSistema,
+          tienda_id: currentStore.id,
+          moneda: (original as any).moneda || 'CRC',
+          activo: true
+        })
+        .select()
+        .single();
+
+      if (insertError || !nuevo) {
+        console.error('Error creando producto duplicado:', insertError);
+        showAlert('Error al crear el producto duplicado');
+        return;
+      }
+
+      // 6. Copiar BOM items
+      if (bomOriginal && bomOriginal.length > 0) {
+        const nuevosBOM = bomOriginal.map((item: any) => ({
+          product_id: nuevo.id_producto,
+          id_componente: item.id_componente,
+          nombre_componente: item.nombre_componente,
+          cantidad_x_unidad: item.cantidad_x_unidad,
+          unidad_id: item.unidad_id,
+          unidad: item.unidad || 'Uni',
+          precio_unitario_base: item.precio_unitario_base,
+          precio_ajustado: item.precio_ajustado
+        }));
+
+        const { error: bomError } = await supabase
+          .from('bom_items')
+          .insert(nuevosBOM);
+
+        if (bomError) {
+          console.error('Error copiando BOM items:', bomError);
+          showAlert('Producto duplicado pero hubo error al copiar los componentes BOM');
+          cargarProductos();
+          return;
+        }
+      }
+
+      await cargarProductos();
+      showAlert(`Producto duplicado correctamente como "${nuevoCodigo}"`);
+    } catch (err) {
+      console.error('Error duplicando producto:', err);
+      showAlert('Error al duplicar el producto');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const cerrarForm = () => {
@@ -481,6 +610,7 @@ export default function ProductosPage() {
           onEdit={handleEditarProducto}
           onInactivar={handleInactivarProducto}
           onEliminar={handleEliminarProducto}
+          onDuplicar={handleDuplicarProducto}
         />
         </>)}
       </div>

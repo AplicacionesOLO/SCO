@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
 import { formatCurrencyWithSymbol, getCurrencySymbol } from '../../../lib/currency';
-import CrearArticuloModal from './CrearArticuloModal';
+import InventarioForm from '../../inventario/components/InventarioForm';
 import DetalleComponenteModal from './DetalleComponenteModal';
 
 interface Articulo {
@@ -97,12 +97,6 @@ export default function BuscarArticuloModal({ onSeleccionar, onCerrar, moneda = 
     if (articuloSeleccionado) {
       onSeleccionar(articuloSeleccionado, cantidad, unidadId, precioAjustado);
     }
-  };
-
-  const onArticuloCreado = (nuevoArticulo: Articulo) => {
-    setShowCrearModal(false);
-    setArticuloSeleccionado(nuevoArticulo);
-    setShowDetalleModal(true);
   };
 
   return (
@@ -233,10 +227,34 @@ export default function BuscarArticuloModal({ onSeleccionar, onCerrar, moneda = 
 
       {/* Modal crear artículo */}
       {showCrearModal && (
-        <CrearArticuloModal
-          nombreInicial={busqueda}
-          onCreado={onArticuloCreado}
-          onCerrar={() => setShowCrearModal(false)}
+        <InventarioForm
+          articulo={null}
+          onSave={async (data) => {
+            setShowCrearModal(false);
+            const codigo = (data as any).codigo_articulo || busqueda;
+            try {
+              const { data: articuloCreado } = await supabase
+                .from('inventario')
+                .select(`
+                  id_articulo,
+                  codigo_articulo,
+                  descripcion_articulo,
+                  precio_articulo,
+                  categoria:categorias_inventario(nombre_categoria),
+                  unidad:unidades_medida(nombre, simbolo)
+                `)
+                .eq('codigo_articulo', codigo)
+                .eq('tienda_id', currentStore?.id ?? '')
+                .maybeSingle();
+              if (articuloCreado) {
+                setArticuloSeleccionado(articuloCreado as Articulo);
+                setShowDetalleModal(true);
+              }
+            } catch (err) {
+              console.error('Error recuperando artículo creado:', err);
+            }
+          }}
+          onCancel={() => setShowCrearModal(false)}
         />
       )}
 

@@ -14,137 +14,173 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const { hasPermission, hasRole, permissions, isAdmin } = usePermissions();
   const [isHovered, setIsHovered] = useState(false);
 
+  // Determinar si el sistema de control de menú está activo para este usuario
+
   const menuItems = [
     {
       name: 'Dashboard',
       icon: 'ri-dashboard-line',
       path: '/dashboard',
-      permission: 'dashboard:view'
+      permission: 'dashboard:view',
+      menuKey: 'menu:dashboard'
     },
     {
       name: 'Clientes',
       icon: 'ri-user-line',
       path: '/clientes',
-      permission: 'clientes:view'
+      permission: 'clientes:view',
+      menuKey: 'menu:clientes'
     },
     {
       name: 'Productos',
       icon: 'ri-product-hunt-line',
       path: '/productos',
-      permission: 'productos:view'
+      permission: 'productos:view',
+      menuKey: 'menu:productos'
     },
     {
       name: 'Inventario',
       icon: 'ri-store-line',
       path: '/inventario',
-      permission: 'inventario:view'
+      permission: 'inventario:view',
+      menuKey: 'menu:inventario'
     },
     {
       name: 'Mantenimiento',
       icon: 'ri-tools-line',
       path: '/mantenimiento',
-      permission: 'mantenimiento:view'
+      permission: 'mantenimiento:view',
+      menuKey: 'menu:mantenimiento'
     },
     {
       name: 'Cotizaciones',
       icon: 'ri-file-text-line',
       path: '/cotizaciones',
-      permission: 'cotizaciones:view'
+      permission: 'cotizaciones:view',
+      menuKey: 'menu:cotizaciones'
     },
     {
       name: 'Pedidos',
       icon: 'ri-shopping-cart-line',
       path: '/pedidos',
-      permission: 'pedidos:view'
+      permission: 'pedidos:view',
+      menuKey: 'menu:pedidos'
     },
     {
       name: 'Seguimiento',
       icon: 'ri-route-line',
       path: '/seguimiento',
-      permission: 'seguimiento:view'
+      permission: 'seguimiento:view',
+      menuKey: 'menu:seguimiento'
     },
     {
       name: 'Tareas',
       icon: 'ri-task-line',
       path: '/tareas',
-      permission: 'tareas:view'
+      permission: 'tareas:view',
+      menuKey: 'menu:tareas'
     },
     {
       name: 'Análisis Tareas',
       icon: 'ri-bar-chart-box-line',
       path: '/tabla-datos-tareas',
-      permission: 'tareas:view'
+      permission: 'tareas:view',
+      menuKey: 'menu:analisis-tareas'
     },
     {
       name: 'Reporte del Día',
       icon: 'ri-calendar-check-line',
       path: '/reporte-dia',
-      requireAuth: true
+      requireAuth: true,
+      menuKey: 'menu:reporte-dia'
     },
     {
       name: 'Correspondencia',
       icon: 'ri-mail-send-line',
       path: '/correspondencia',
-      requireAuth: true
+      requireAuth: true,
+      menuKey: 'menu:correspondencia'
     },
     {
       name: 'Facturación',
       icon: 'ri-bill-line',
       path: '/facturacion',
-      permission: 'facturacion:view'
+      permission: 'facturacion:view',
+      menuKey: 'menu:facturacion'
     },
     {
       name: 'Emisión de Factura',
       icon: 'ri-file-add-line',
       path: '/facturacion/emision',
-      permission: 'facturacion:emision:view'
+      permission: 'facturacion:emision:view',
+      menuKey: 'menu:facturacion-emision'
     },
     {
       name: 'Seguridad',
       icon: 'ri-shield-user-line',
       path: '/seguridad',
-      role: 'Admin'
+      role: 'Admin',
+      menuKey: 'menu:seguridad'
     },
     {
       name: 'CostBot Admin',
       icon: 'ri-robot-line',
       path: '/costbot-admin',
-      role: 'Admin'
+      role: 'Admin',
+      menuKey: 'menu:costbot-admin'
     },
     {
       name: 'Monitor',
       icon: 'ri-eye-line',
       path: '/monitor',
-      permission: 'monitor:view'
+      permission: 'monitor:view',
+      menuKey: 'menu:monitor'
     },
     {
       name: 'Perfil',
       icon: 'ri-user-settings-line',
       path: '/perfil',
       requireAuth: true
+      // Perfil SIEMPRE visible, sin menuKey
     }
   ];
 
   const shouldShowItem = (item: typeof menuItems[0]) => {
-    // Admin ve todo siempre
     if (isAdmin) return true;
 
+    // Items controlados por rol (Admin)
     if (item.role) {
       return hasRole(item.role);
     }
-    if (item.permission) {
-      // Verificación directa con :view
-      if (hasPermission(item.permission)) return true;
 
-      // Si el usuario tiene CUALQUIER permiso del módulo, mostrar el ítem
-      // Ej: si tiene tareas:create o tareas:update pero no tareas:view, igual se muestra
+    // Perfil: siempre visible si el usuario está autenticado
+    if (item.path === '/perfil') {
+      return !!user;
+    }
+
+    // 🔑 CONTROL DE MENÚ: Si el ítem tiene menuKey, SIEMPRE validar contra ese permiso
+    if (item.menuKey) {
+      return hasPermission(item.menuKey);
+    }
+
+    // ⬇️ BACKWARD COMPAT: Si el ítem no tiene menuKey, usar lógica anterior
+    if (item.permission) {
+      if (hasPermission(item.permission)) return true;
       const baseModule = item.permission.split(':')[0];
       return permissions.some(p => p === baseModule || p.startsWith(`${baseModule}:`));
     }
+
     if (item.requireAuth) {
       return !!user;
     }
+
     return true;
+  };
+
+  // Para el Optimizador (renderizado aparte), aplicar misma lógica de menú
+  const shouldShowOptimizador = () => {
+    if (isAdmin) return true;
+    return hasPermission('menu:optimizador');
   };
 
   const isActive = (path: string) => {
@@ -223,7 +259,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           ))}
 
           {/* Optimizador de Cortes 2D */}
-          {hasPermission('optimizador:view') && (
+          {shouldShowOptimizador() && (
             <Link
               to="/optimizador"
               className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer ${

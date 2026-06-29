@@ -2,6 +2,7 @@ import { User } from '@supabase/supabase-js';
 import { useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useNotification } from '../../../hooks/useNotification';
+import { usePermissions } from '../../../hooks/usePermissions';
 
 interface UserProfile {
   id: string;
@@ -28,6 +29,10 @@ export default function PerfilInfo({ user, profile }: PerfilInfoProps) {
   const [passwordError, setPasswordError] = useState('');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const { showNotification } = useNotification();
+  const { hasPermission } = usePermissions();
+
+  const canEdit = hasPermission('perfil:edit');
+  const canChangePassword = hasPermission('perfil:password');
 
   // Formatear fecha de creación
   const formatDate = (dateString: string) => {
@@ -143,13 +148,15 @@ export default function PerfilInfo({ user, profile }: PerfilInfoProps) {
       <div className="bg-gray-50 rounded-lg p-6">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold text-gray-900">Información Personal</h3>
-          <button
-            onClick={() => setIsEditing(!isEditing)}
-            className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-          >
-            <i className="ri-edit-line mr-2"></i>
-            {isEditing ? 'Cancelar' : 'Editar'}
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => setIsEditing(!isEditing)}
+              className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+            >
+              <i className="ri-edit-line mr-2"></i>
+              {isEditing ? 'Cancelar' : 'Editar'}
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -273,7 +280,7 @@ export default function PerfilInfo({ user, profile }: PerfilInfoProps) {
         </div>
 
         {/* Botones de Acción */}
-        {isEditing && (
+        {isEditing && canEdit && (
           <div className="mt-6 pt-6 border-t border-gray-200">
             <div className="flex space-x-4">
               <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
@@ -292,7 +299,7 @@ export default function PerfilInfo({ user, profile }: PerfilInfoProps) {
         )}
 
         {/* Cambiar Contraseña */}
-        {!isEditing && (
+        {!isEditing && canChangePassword && (
           <div className="mt-6 pt-6 border-t border-gray-200">
             <h4 className="text-md font-medium text-gray-900 mb-4">Seguridad</h4>
             <button 

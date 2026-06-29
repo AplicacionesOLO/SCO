@@ -215,6 +215,7 @@ class MonitorService {
   /**
    * Obtener los clusters a los que pertenece un usuario.
    * Admin ve todos los clusters activos sin filtro de membresía.
+   * Roles Visualizador* ven solo clusters de su cliente asignado.
    * En HYBRID no hay cluster_usuarios → devuelve todos los sintéticos.
    */
   async getClustersPorUsuario(usuarioId: string, rol?: string): Promise<ClusterConUsuarios[]> {
@@ -230,6 +231,36 @@ class MonitorService {
       }
       // LIVE_FULL: Admin → todos los clusters activos
       return this.getClusters();
+    }
+
+    // 🆕 Visualizador: filtrar por cliente extraído del nombre del rol
+    if (rol?.startsWith('Visualizador ')) {
+      const visualizadorClient = rol.replace('Visualizador ', '').trim().toUpperCase();
+      
+      let allClusters: ClusterConUsuarios[];
+      if (this.mode === 'MOCK') {
+        allClusters = MOCK_CLUSTERS.filter(c => c.activo);
+      } else if (this.mode === 'LIVE_HYBRID') {
+        allClusters = await this.getSyntheticClusters();
+      } else {
+        // LIVE_FULL: obtener todos los clusters activos sin filtro de membresía
+        try {
+          const { data: clusters } = await supabase
+            .from('clusters')
+            .select('*')
+            .eq('activo', true)
+            .order('nombre', { ascending: true });
+
+          if (!clusters || clusters.length === 0) return [];
+          allClusters = await this.enrichClustersWithCounts(clusters);
+        } catch (err: any) {
+          console.warn('[MonitorService] Error en getClustersPorUsuario (Visualizador):', err.message);
+          return [];
+        }
+      }
+
+      // Filtrar solo clusters cuyo cliente coincida con el extraído del rol
+      return allClusters.filter(c => (c.cliente || '').toUpperCase() === visualizadorClient);
     }
 
     if (this.mode === 'MOCK') {

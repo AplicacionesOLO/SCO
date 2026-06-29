@@ -192,7 +192,9 @@ export function PermissionMatrix({ onSave, className = '' }: PermissionMatrixPro
           'cotizaciones:view:own', 'cotizaciones:create', 'cotizaciones:edit:own', 'cotizaciones:print',
           'pedidos:view:own', 'pedidos:create', 'pedidos:edit:own', 'pedidos:print',
           'productos:view', 'inventario:view',
-          'seguimiento:view:own'
+          'seguimiento:view:own',
+          'menu:dashboard', 'menu:clientes', 'menu:cotizaciones', 'menu:pedidos',
+          'menu:productos', 'menu:inventario', 'menu:optimizador'
         ];
         break;
       case 'supervisor':
@@ -203,7 +205,10 @@ export function PermissionMatrix({ onSave, className = '' }: PermissionMatrixPro
           'pedidos:view', 'pedidos:create', 'pedidos:edit', 'pedidos:confirm', 'pedidos:print',
           'productos:view', 'inventario:view',
           'seguimiento:view', 'seguimiento:edit',
-          'tareas:view', 'tareas:create', 'tareas:edit', 'tareas:assign'
+          'tareas:view', 'tareas:create', 'tareas:edit', 'tareas:assign',
+          'menu:dashboard', 'menu:clientes', 'menu:cotizaciones', 'menu:pedidos',
+          'menu:productos', 'menu:inventario', 'menu:facturacion',
+          'menu:optimizador', 'menu:tareas', 'menu:monitor'
         ];
         break;
       case 'contador':
@@ -213,7 +218,8 @@ export function PermissionMatrix({ onSave, className = '' }: PermissionMatrixPro
           'cotizaciones:view', 'cotizaciones:export',
           'pedidos:view', 'pedidos:invoice', 'pedidos:print',
           'facturas:view', 'facturas:create', 'facturas:edit', 'facturas:send', 'facturas:cancel', 'facturas:print', 'facturas:export', 'facturas:config',
-          'seguimiento:view'
+          'seguimiento:view',
+          'menu:dashboard', 'menu:facturacion', 'menu:pedidos', 'menu:clientes'
         ];
         break;
       case 'inventario':
@@ -222,7 +228,8 @@ export function PermissionMatrix({ onSave, className = '' }: PermissionMatrixPro
           'productos:view', 'productos:create', 'productos:edit', 'productos:bom', 'productos:export',
           'inventario:view', 'inventario:create', 'inventario:edit', 'inventario:adjust', 'inventario:transfer', 'inventario:import', 'inventario:export', 'inventario:categories', 'inventario:thresholds',
           'mantenimiento:view', 'mantenimiento:alerts', 'mantenimiento:thresholds', 'mantenimiento:replenishment', 'mantenimiento:predictions',
-          'optimizador:view', 'optimizador:create', 'optimizador:optimize', 'optimizador:export'
+          'optimizador:view', 'optimizador:create', 'optimizador:optimize', 'optimizador:export',
+          'menu:dashboard', 'menu:inventario', 'menu:productos', 'menu:mantenimiento', 'menu:optimizador'
         ];
         break;
       case 'produccion':
@@ -233,7 +240,9 @@ export function PermissionMatrix({ onSave, className = '' }: PermissionMatrixPro
           'inventario:view', 'inventario:adjust',
           'seguimiento:view', 'seguimiento:edit',
           'tareas:view', 'tareas:edit', 'tareas:complete',
-          'optimizador:view', 'optimizador:create', 'optimizador:optimize', 'optimizador:export'
+          'optimizador:view', 'optimizador:create', 'optimizador:optimize', 'optimizador:export',
+          'menu:dashboard', 'menu:tareas', 'menu:analisis-tareas', 'menu:inventario',
+          'menu:productos', 'menu:optimizador'
         ];
         break;
       case 'lectura':
@@ -246,7 +255,10 @@ export function PermissionMatrix({ onSave, className = '' }: PermissionMatrixPro
           'facturas:view', 'facturas:print', 'facturas:export',
           'seguimiento:view',
           'tareas:view',
-          'mantenimiento:view'
+          'mantenimiento:view',
+          'menu:dashboard', 'menu:clientes', 'menu:cotizaciones', 'menu:pedidos',
+          'menu:inventario', 'menu:productos', 'menu:facturacion',
+          'menu:tareas', 'menu:optimizador', 'menu:monitor'
         ];
         break;
     }

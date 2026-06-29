@@ -163,6 +163,26 @@ export const PERMISSIONS = {
   'seguridad:permissions:delete': 'Eliminar permisos',
   'seguridad:permissions:assign': 'Asignar permisos a roles',
 
+  // Menú - Control de visibilidad de módulos en la barra lateral
+  'menu:dashboard': 'Mostrar Dashboard en menú lateral',
+  'menu:clientes': 'Mostrar Clientes en menú lateral',
+  'menu:productos': 'Mostrar Productos en menú lateral',
+  'menu:inventario': 'Mostrar Inventario en menú lateral',
+  'menu:mantenimiento': 'Mostrar Mantenimiento en menú lateral',
+  'menu:cotizaciones': 'Mostrar Cotizaciones en menú lateral',
+  'menu:pedidos': 'Mostrar Pedidos en menú lateral',
+  'menu:seguimiento': 'Mostrar Seguimiento en menú lateral',
+  'menu:tareas': 'Mostrar Tareas en menú lateral',
+  'menu:analisis-tareas': 'Mostrar Análisis de Tareas en menú lateral',
+  'menu:reporte-dia': 'Mostrar Reporte del Día en menú lateral',
+  'menu:correspondencia': 'Mostrar Correspondencia en menú lateral',
+  'menu:facturacion': 'Mostrar Facturación en menú lateral',
+  'menu:facturacion-emision': 'Mostrar Emisión de Factura en menú lateral',
+  'menu:seguridad': 'Mostrar Seguridad en menú lateral',
+  'menu:costbot-admin': 'Mostrar CostBot Admin en menú lateral',
+  'menu:monitor': 'Mostrar Monitor en menú lateral',
+  'menu:optimizador': 'Mostrar Optimizador 2D en menú lateral',
+
   // Perfil
   'perfil:view': 'Ver perfil propio',
   'perfil:edit': 'Editar perfil propio',
@@ -205,7 +225,13 @@ export const PERMISSION_GROUPS = {
     // Seguridad
     'seguridad:view', 'seguridad:users:view', 'seguridad:users:create', 'seguridad:users:edit', 'seguridad:users:delete', 'seguridad:users:activate', 'seguridad:roles:view', 'seguridad:roles:create', 'seguridad:roles:edit', 'seguridad:roles:delete', 'seguridad:permissions:view', 'seguridad:permissions:create', 'seguridad:permissions:edit', 'seguridad:permissions:delete', 'seguridad:permissions:assign',
     // Perfil
-    'perfil:view', 'perfil:edit', 'perfil:password'
+    'perfil:view', 'perfil:edit', 'perfil:password',
+    // Menú
+    'menu:dashboard', 'menu:clientes', 'menu:productos', 'menu:inventario',
+    'menu:mantenimiento', 'menu:cotizaciones', 'menu:pedidos', 'menu:seguimiento',
+    'menu:tareas', 'menu:analisis-tareas', 'menu:reporte-dia', 'menu:correspondencia',
+    'menu:facturacion', 'menu:facturacion-emision', 'menu:seguridad', 'menu:costbot-admin',
+    'menu:monitor', 'menu:optimizador'
   ],
   
   'Vendedor': [
@@ -226,7 +252,10 @@ export const PERMISSION_GROUPS = {
     // Tareas
     'tareas:view:own', 'tareas:create',
     // Perfil
-    'perfil:view', 'perfil:edit', 'perfil:password'
+    'perfil:view', 'perfil:edit', 'perfil:password',
+    // Menú
+    'menu:dashboard', 'menu:clientes', 'menu:productos', 'menu:inventario',
+    'menu:cotizaciones', 'menu:pedidos', 'menu:optimizador'
   ],
   
   'Supervisor de Ventas': [
@@ -252,7 +281,11 @@ export const PERMISSION_GROUPS = {
     // Tareas
     'tareas:view', 'tareas:create', 'tareas:update', 'tareas:manage',
     // Perfil
-    'perfil:view', 'perfil:edit', 'perfil:password'
+    'perfil:view', 'perfil:edit', 'perfil:password',
+    // Menú
+    'menu:dashboard', 'menu:clientes', 'menu:cotizaciones', 'menu:pedidos',
+    'menu:productos', 'menu:inventario', 'menu:facturacion',
+    'menu:optimizador', 'menu:tareas', 'menu:monitor'
   ],
   
   'Encargado de Inventario': [
@@ -269,7 +302,10 @@ export const PERMISSION_GROUPS = {
     // Mantenimiento
     'mantenimiento:view', 'mantenimiento:alerts', 'mantenimiento:thresholds', 'mantenimiento:replenishment', 'mantenimiento:predictions',
     // Perfil
-    'perfil:view', 'perfil:edit', 'perfil:password'
+    'perfil:view', 'perfil:edit', 'perfil:password',
+    // Menú
+    'menu:dashboard', 'menu:inventario', 'menu:productos', 'menu:mantenimiento',
+    'menu:optimizador'
   ],
   
   'Contador': [
@@ -283,7 +319,9 @@ export const PERMISSION_GROUPS = {
     // Clientes
     'clientes:view', 'clientes:export',
     // Perfil
-    'perfil:view', 'perfil:edit', 'perfil:password'
+    'perfil:view', 'perfil:edit', 'perfil:password',
+    // Menú
+    'menu:dashboard', 'menu:facturacion', 'menu:pedidos', 'menu:clientes'
   ],
   
   'Encargado de Producción': [
@@ -300,7 +338,10 @@ export const PERMISSION_GROUPS = {
     // Optimizador
     'optimizador:view', 'optimizador:create', 'optimizador:bom', 'optimizador:export',
     // Perfil
-    'perfil:view', 'perfil:edit', 'perfil:password'
+    'perfil:view', 'perfil:edit', 'perfil:password',
+    // Menú
+    'menu:dashboard', 'menu:tareas', 'menu:analisis-tareas', 'menu:inventario',
+    'menu:productos', 'menu:optimizador'
   ],
   
   'Solo Lectura': [
@@ -326,13 +367,19 @@ export const PERMISSION_GROUPS = {
     // Optimizador
     'optimizador:view',
     // Perfil
-    'perfil:view', 'perfil:edit', 'perfil:password'
+    'perfil:view', 'perfil:edit', 'perfil:password',
+    // Menú
+    'menu:dashboard', 'menu:clientes', 'menu:cotizaciones', 'menu:pedidos',
+    'menu:inventario', 'menu:productos', 'menu:facturacion',
+    'menu:tareas', 'menu:optimizador', 'menu:monitor'
   ],
 
   'Visualizador': [
     // Solo acceso al monitor
     'monitor:view', 'monitor:comment',
     // Perfil básico
-    'perfil:view', 'perfil:edit', 'perfil:password'
+    'perfil:view', 'perfil:edit', 'perfil:password',
+    // Menú - Solo Monitor
+    'menu:monitor'
   ]
 };

@@ -216,7 +216,7 @@ const routes: RouteObject[] = [
   {
     path: '/reporte-dia',
     element: (
-      <ProtectedRoute requireAuth>
+      <ProtectedRoute requireAuth permission="menu:reporte-dia">
         <ReporteDiaPage />
       </ProtectedRoute>
     ),
@@ -232,7 +232,7 @@ const routes: RouteObject[] = [
   {
     path: '/correspondencia',
     element: (
-      <ProtectedRoute requireAuth>
+      <ProtectedRoute requireAuth permission="menu:correspondencia">
         <CorrespondenciaPage />
       </ProtectedRoute>
     ),

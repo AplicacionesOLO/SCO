@@ -59,8 +59,13 @@ export default function MonitorPage() {
       if (clustersUsuario.length > 0) {
         setClusters(clustersUsuario);
       } else {
-        const todosClusters = await monitorService.getClusters();
-        setClusters(todosClusters);
+        // Para visualizadores: no hacer fallback a todos los clusters
+        if (rol?.startsWith('Visualizador ')) {
+          setClusters([]);
+        } else {
+          const todosClusters = await monitorService.getClusters();
+          setClusters(todosClusters);
+        }
       }
 
       // Obtener info de diagnóstico
@@ -295,6 +300,25 @@ export default function MonitorPage() {
               <div className="text-center">
                 <i className="ri-loader-4-line animate-spin text-3xl text-foreground-400"></i>
                 <p className="text-sm text-foreground-500 mt-3">Cargando tareas...</p>
+              </div>
+            </div>
+          )}
+
+          {!error && !loading && clusters.length === 0 && (
+            <div className="flex items-center justify-center py-16">
+              <div className="text-center max-w-sm">
+                <div className="w-16 h-16 mx-auto rounded-full bg-amber-100 flex items-center justify-center mb-4">
+                  <i className="ri-user-location-line text-2xl text-amber-600"></i>
+                </div>
+                <h3 className="text-base font-semibold text-foreground-900 mb-2">
+                  Sin clusters asignados
+                </h3>
+                <p className="text-sm text-foreground-500">
+                  {profile?.rol?.startsWith('Visualizador ')
+                    ? `No hay un cluster configurado para el cliente de tu rol (${profile.rol.replace('Visualizador ', '')}). Contactá al administrador para que cree el cluster correspondiente.`
+                    : 'No tenés clusters asignados. Contactá al administrador para que te agregue a uno.'
+                  }
+                </p>
               </div>
             </div>
           )}

@@ -177,6 +177,7 @@ class MonitorService {
   /**
    * Obtener todos los clusters visibles para el usuario actual.
    * - LIVE_FULL: desde tablas clusters + cluster_usuarios + tareas
+   *   (fallback a sintéticos si la tabla clusters está vacía)
    * - LIVE_HYBRID: clusters sintéticos desde DISTINCT datos_formulario->>cliente
    * - MOCK: datos de prueba
    */
@@ -203,7 +204,12 @@ class MonitorService {
         .order('nombre', { ascending: true });
 
       if (error) throw error;
-      if (!clusters || clusters.length === 0) return [];
+
+      // 🆕 Fallback a clusters sintéticos si la tabla está vacía
+      if (!clusters || clusters.length === 0) {
+        console.warn('[MonitorService] Tabla clusters vacía en LIVE_FULL — generando sintéticos desde tareas');
+        return this.getSyntheticClusters();
+      }
 
       return this.enrichClustersWithCounts(clusters);
     } catch (err: any) {
@@ -251,11 +257,16 @@ class MonitorService {
             .eq('activo', true)
             .order('nombre', { ascending: true });
 
-          if (!clusters || clusters.length === 0) return [];
-          allClusters = await this.enrichClustersWithCounts(clusters);
+          // 🆕 Fallback a sintéticos si la tabla clusters está vacía
+          if (!clusters || clusters.length === 0) {
+            console.warn('[MonitorService] Tabla clusters vacía para Visualizador — generando sintéticos desde tareas');
+            allClusters = await this.getSyntheticClusters();
+          } else {
+            allClusters = await this.enrichClustersWithCounts(clusters);
+          }
         } catch (err: any) {
-          console.warn('[MonitorService] Error en getClustersPorUsuario (Visualizador):', err.message);
-          return [];
+          console.warn('[MonitorService] Error en getClustersPorUsuario (Visualizador), degradando a sintéticos:', err.message);
+          allClusters = await this.getSyntheticClusters();
         }
       }
 

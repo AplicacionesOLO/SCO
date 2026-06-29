@@ -5,6 +5,7 @@ import type { TareaComentario } from '../../../types/monitor';
 interface MonitorTaskCardProps {
   tarea: Tarea;
   comentarios: TareaComentario[];
+  canComment?: boolean;
   onVerComentarios: (tarea: Tarea) => void;
   onAgregarComentario: (tarea: Tarea) => void;
 }
@@ -28,6 +29,7 @@ const ESTADO_ICONS: Record<string, string> = {
 export default function MonitorTaskCard({
   tarea,
   comentarios,
+  canComment = false,
   onVerComentarios,
   onAgregarComentario
 }: MonitorTaskCardProps) {
@@ -108,13 +110,15 @@ export default function MonitorTaskCard({
 
           {/* Acciones y badge de comentarios */}
           <div className="flex flex-col items-end gap-2 flex-shrink-0">
-            <button
-              onClick={(e) => { e.stopPropagation(); onAgregarComentario(tarea); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-secondary-700 bg-secondary-100 rounded-lg hover:bg-secondary-200 transition-colors cursor-pointer whitespace-nowrap"
-            >
-              <i className="ri-chat-3-line"></i>
-              Comentar
-            </button>
+            {canComment && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onAgregarComentario(tarea); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-secondary-700 bg-secondary-100 rounded-lg hover:bg-secondary-200 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <i className="ri-chat-3-line"></i>
+                Comentar
+              </button>
+            )}
             {comentariosCount > 0 && (
               <button
                 onClick={(e) => { e.stopPropagation(); onVerComentarios(tarea); }}

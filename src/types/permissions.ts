@@ -198,6 +198,8 @@ export const PERMISSION_GROUPS = {
     'seguimiento:view', 'seguimiento:create', 'seguimiento:edit', 'seguimiento:delete',
     // Tareas
     'tareas:view', 'tareas:create', 'tareas:update', 'tareas:delete', 'tareas:manage', 'tareas:export',
+    // Monitor
+    'monitor:view', 'monitor:comment',
     // Optimizador
     'optimizador:view', 'optimizador:create', 'optimizador:edit', 'optimizador:delete', 'optimizador:export', 'optimizador:bom',
     // Seguridad
@@ -243,6 +245,8 @@ export const PERMISSION_GROUPS = {
     'inventario:view', 'productos:view',
     // Facturación
     'facturacion:view', 'facturacion:create', 'facturacion:send', 'facturacion:print', 'facturacion:export',
+    // Monitor (seguimiento de clientes)
+    'monitor:view', 'monitor:comment',
     // Optimizador
     'optimizador:view', 'optimizador:create', 'optimizador:edit', 'optimizador:bom', 'optimizador:export',
     // Tareas
@@ -317,6 +321,8 @@ export const PERMISSION_GROUPS = {
     'facturacion:view', 'facturacion:print', 'facturacion:export',
     // Tareas
     'tareas:view',
+    // Monitor (solo lectura)
+    'monitor:view',
     // Optimizador
     'optimizador:view',
     // Perfil

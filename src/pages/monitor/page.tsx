@@ -6,11 +6,15 @@ import MonitorTaskCard from './components/MonitorTaskCard';
 import ComentarioModal from './components/ComentarioModal';
 import { monitorService } from '../../services/monitorService';
 import { useAuth } from '../../hooks/useAuth';
+import { usePermissions } from '../../hooks/usePermissions';
 import type { Tarea } from '../../types/tarea';
 import type { ClusterConUsuarios, TareaComentario, MonitorFilters, MonitorStats, MonitorDebugInfo } from '../../types/monitor';
 
 export default function MonitorPage() {
   const { user, profile, isAuthenticated } = useAuth();
+  const { hasPermission } = usePermissions();
+  
+  const canComment = hasPermission('monitor:comment');
   
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [clusters, setClusters] = useState<ClusterConUsuarios[]>([]);
@@ -132,6 +136,7 @@ export default function MonitorPage() {
 
   // Agregar comentario (abre el modal si no está abierto)
   const handleAgregarComentario = async (tarea: Tarea) => {
+    if (!canComment) return;
     if (!showComentarios || tareaSeleccionada?.id !== tarea.id) {
       await handleVerComentarios(tarea);
     }
@@ -321,6 +326,7 @@ export default function MonitorPage() {
                     key={tarea.id}
                     tarea={tarea}
                     comentarios={[]}
+                    canComment={canComment}
                     onVerComentarios={handleVerComentarios}
                     onAgregarComentario={handleAgregarComentario}
                   />

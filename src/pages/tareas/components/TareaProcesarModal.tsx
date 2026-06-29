@@ -1112,6 +1112,8 @@ export default function TareaProcesarModal({ tarea, onClose, onSave }: TareaProc
         items: items.map(item => ({
           item_type: item.item_type,
           item_id: item.item_id,
+          inventario_id: item.inventario_id,
+          producto_id: item.producto_id,
           descripcion: item.descripcion,
           cantidad: item.cantidad,
           costo_unitario: item.costo_unitario

@@ -46,8 +46,8 @@ export interface InventarioMovimiento {
   articulo_id: number;
   tipo: 'ajuste' | 'venta' | 'reserva' | 'liberacion' | 'compra';
   cantidad: number;
-  referencia_type?: string;
-  referencia_id?: number;
+  referencia_tipo?: string;
+  referencia_id?: string;
   notas?: string;
   usuario_id: string;
   created_at: string;
@@ -693,7 +693,7 @@ export class MantenimientoService {
           articulo_id: item.inventario.id_articulo,
           tipo: 'venta',
           cantidad: -cantidadRequerida, // Negativo porque es una salida
-          referencia_type: 'cotizacion',
+          referencia_tipo: 'cotizacion',
           referencia_id: cotizacion_id,
           notas: `Venta por cotización #${cotizacion_id}`,
           usuario_id
@@ -738,7 +738,7 @@ export class MantenimientoService {
             articulo_id: bomItem.inventario.id_articulo,
             tipo: 'venta',
             cantidad: -cantidadRequerida,
-            referencia_type: 'cotizacion',
+            referencia_tipo: 'cotizacion',
             referencia_id: cotizacion_id,
             notas: `Venta por cotización #${cotizacion_id} - Componente de ${item.producto.nombre_producto}`,
             usuario_id

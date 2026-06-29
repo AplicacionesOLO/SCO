@@ -56,6 +56,8 @@ export interface TareaItem {
   tarea_id: string;
   item_type: 'inventario' | 'producto' | 'servicio' | 'otro';
   item_id?: number;
+  inventario_id?: number | null;
+  producto_id?: number | null;
   descripcion: string;
   cantidad: number;
   costo_unitario: number;
@@ -179,6 +181,8 @@ export interface UpdateTareaData {
   items?: Array<{
     item_type: 'inventario' | 'producto' | 'servicio' | 'otro';
     item_id?: number;
+    inventario_id?: number | null;
+    producto_id?: number | null;
     descripcion: string;
     cantidad: number;
     costo_unitario: number;

@@ -252,7 +252,7 @@ export default function InventarioTable({
                 cantidad: -stockActual,
                 stock_anterior: stockActual,
                 stock_posterior: 0,
-                referencia_type: 'inventario',
+                referencia_tipo: 'inventario',
                 referencia_id: id,
                 notas: `Artículo eliminado del sistema — Código: ${articuloAEliminar.codigo_articulo} · ${articuloAEliminar.descripcion_articulo}`,
                 usuario_id: user?.id || null,

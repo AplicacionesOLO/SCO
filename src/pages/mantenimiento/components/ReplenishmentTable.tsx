@@ -27,8 +27,8 @@ interface Movimiento {
   cantidad: number;
   notas?: string;
   created_at: string;
-  referencia_id?: number;
-  referencia_type?: string;
+  referencia_id?: string;
+  referencia_tipo?: string;
 }
 
 interface ReplenishmentTableProps {
@@ -192,7 +192,7 @@ export default function ReplenishmentTable({ orders = [], onRefresh }: Replenish
         cantidad: qtyRecibida,
         stock_anterior: stockAnterior,
         stock_posterior: stockPosterior,
-        referencia_type: 'replenishment_order',
+        referencia_tipo: 'replenishment_order',
         referencia_id: receivingOrder.id,
         notas: `Reabastecimiento — Orden #${receivingOrder.id} · Esta recepción: ${qtyRecibida} uds. · Total acumulado: ${nuevaQtyRecibida}/${receivingOrder.qty_sugerida}`,
         usuario_id: user?.id || null
@@ -226,7 +226,7 @@ export default function ReplenishmentTable({ orders = [], onRefresh }: Replenish
       const { data } = await supabase
         .from('inventario_movimientos')
         .select('*')
-        .eq('referencia_type', 'replenishment_order')
+        .eq('referencia_tipo', 'replenishment_order')
         .eq('referencia_id', order.id)
         .order('created_at', { ascending: false });
       setReportMovimientos(data || []);

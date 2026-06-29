@@ -9,8 +9,8 @@ interface Movimiento {
   cantidad: number;
   stock_anterior: number | null;
   stock_posterior: number | null;
-  referencia_type: string | null;
-  referencia_id: number | null;
+  referencia_tipo: string | null;
+  referencia_id: string | null;
   notas: string | null;
   usuario_id: string | null;
   created_at: string;
@@ -39,13 +39,18 @@ function getTipoInfo(tipo: string, cantidad: number) {
     : { label: tipo, icon: 'ri-subtract-line',   color: 'text-red-700',   bg: 'bg-red-100',   signo: '-' };
 }
 
-function getReferenciaBadge(type: string | null, id: number | null) {
-  if (!type || !id) return null;
+function getReferenciaBadge(type: string | null, id: string | null) {
+  if (!type || !id) {
+    // Para tipo 'tarea' el id siempre viene ahora (UUID), mostrar desde tipo
+    if (type === 'tarea') return 'Tarea';
+    return null;
+  }
   const labels: Record<string, string> = {
     replenishment_order: `Orden #${id}`,
     cotizacion: `Cotización #${id}`,
     pedido: `Pedido #${id}`,
     ajuste_manual: `Ajuste #${id}`,
+    tarea: `Tarea`,
   };
   return labels[type] || `${type} #${id}`;
 }
@@ -136,7 +141,7 @@ export default function MovimientosInventario() {
       'Stock Anterior':  m.stock_anterior ?? '',
       'Stock Posterior': m.stock_posterior ?? '',
       'Usuario':         m.usuarios?.nombre_completo || m.usuario_id || 'Sistema',
-      'Referencia':      getReferenciaBadge(m.referencia_type, m.referencia_id) || '',
+      'Referencia':      getReferenciaBadge(m.referencia_tipo, m.referencia_id) || '',
       'Notas':           m.notas || '',
     }));
     const ws = XLSX.utils.json_to_sheet(data);
@@ -271,7 +276,7 @@ export default function MovimientosInventario() {
                 {paginated.map(mov => {
                   const tipoInfo = getTipoInfo(mov.tipo, mov.cantidad);
                   const isEntrada = Number(mov.cantidad) > 0;
-                  const refLabel = getReferenciaBadge(mov.referencia_type, mov.referencia_id);
+                  const refLabel = getReferenciaBadge(mov.referencia_tipo, mov.referencia_id);
 
                   return (
                     <tr key={mov.id} className="hover:bg-gray-50">
@@ -322,11 +327,15 @@ export default function MovimientosInventario() {
                         </div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        {refLabel && (
+                        {getReferenciaBadge(mov.referencia_tipo, mov.referencia_id) ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
-                            <i className="ri-link-m mr-1"></i>{refLabel}
+                            <i className="ri-link-m mr-1"></i>{getReferenciaBadge(mov.referencia_tipo, mov.referencia_id)}
                           </span>
-                        )}
+                        ) : mov.referencia_tipo === 'tarea' ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
+                            <i className="ri-task-line mr-1"></i>Tarea
+                          </span>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-xs text-gray-500 max-w-xs block truncate" title={mov.notas || ''}>

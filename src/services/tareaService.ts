@@ -261,6 +261,174 @@ class TareaService {
 
           if (itemsError) throw itemsError;
         }
+
+        // ── DEDUCCIÓN DE INVENTARIO ──────────────────────────────────────
+        // Verificar si ya se descontó inventario para esta tarea (por referencia real, no por texto en notas)
+        const { data: existingMovs } = await supabase
+          .from('inventario_movimientos')
+          .select('id')
+          .eq('referencia_tipo', 'tarea')
+          .eq('referencia_id', id)
+          .limit(1);
+
+        if (!existingMovs || existingMovs.length === 0) {
+          // Obtener consecutivo para las notas
+          const { data: tareaData } = await supabase
+            .from('tareas')
+            .select('consecutivo')
+            .eq('id', id)
+            .single();
+
+          const consecutivo = tareaData?.consecutivo || 'N/A';
+          const movimientos: any[] = [];
+          const articulosAfectados: { articulo_id: number; cantidad: number; on_hand_anterior: number }[] = [];
+
+          for (const item of data.items) {
+            if (item.inventario_id && item.cantidad > 0) {
+              // Artículo directo de inventario
+              const { data: nivelActual } = await supabase
+                .from('inventario_niveles')
+                .select('on_hand, reservado')
+                .eq('articulo_id', item.inventario_id)
+                .maybeSingle();
+
+              const onHandActual = nivelActual?.on_hand || 0;
+              const reservado = nivelActual?.reservado || 0;
+              const disponible = onHandActual - reservado;
+
+              // Validar stock suficiente antes de rebajar
+              if (disponible < item.cantidad) {
+                throw new Error(
+                  `Stock insuficiente para "${item.descripcion || 'artículo #' + item.inventario_id}". ` +
+                  `Disponible: ${disponible}, Requerido: ${item.cantidad}`
+                );
+              }
+
+              const nuevoOnHand = onHandActual - item.cantidad;
+
+              movimientos.push({
+                articulo_id: item.inventario_id,
+                tipo: 'venta',
+                cantidad: -item.cantidad,
+                stock_anterior: onHandActual,
+                stock_posterior: nuevoOnHand,
+                referencia_tipo: 'tarea',
+                referencia_id: id,
+                notas: `Consumo por tarea #${consecutivo}`,
+                usuario_id: user.id
+              });
+
+              articulosAfectados.push({
+                articulo_id: item.inventario_id,
+                cantidad: item.cantidad,
+                on_hand_anterior: onHandActual
+              });
+            } else if (item.producto_id && !item.inventario_id && item.cantidad > 0) {
+              // Producto con BOM - expandir componentes
+              const { data: bomItems, error: bomError } = await supabase
+                .from('bom_items')
+                .select(`
+                  id_componente,
+                  cantidad_x_unidad,
+                  inventario!bom_items_id_componente_fkey(
+                    id_articulo,
+                    codigo_articulo,
+                    descripcion_articulo
+                  )
+                `)
+                .eq('product_id', item.producto_id);
+
+              if (bomError) {
+                console.error('Error expandiendo BOM para producto', item.producto_id, bomError);
+                continue;
+              }
+
+              for (const bomItem of bomItems || []) {
+                const cantidadRequerida = bomItem.cantidad_x_unidad * item.cantidad;
+                const articuloId = bomItem.inventario?.id_articulo;
+                if (!articuloId) continue;
+
+                const { data: nivelActual } = await supabase
+                  .from('inventario_niveles')
+                  .select('on_hand, reservado')
+                  .eq('articulo_id', articuloId)
+                  .maybeSingle();
+
+                const onHandActual = nivelActual?.on_hand || 0;
+                const reservado = nivelActual?.reservado || 0;
+                const disponible = onHandActual - reservado;
+
+                // Validar stock suficiente antes de rebajar
+                if (disponible < cantidadRequerida) {
+                  const descripcionComponente = bomItem.inventario?.descripcion_articulo || bomItem.inventario?.codigo_articulo || `componente #${articuloId}`;
+                  throw new Error(
+                    `Stock insuficiente para "${descripcionComponente}" ` +
+                    `(componente del producto en tarea #${consecutivo}). ` +
+                    `Disponible: ${disponible}, Requerido: ${cantidadRequerida}`
+                  );
+                }
+
+                const nuevoOnHand = onHandActual - cantidadRequerida;
+
+                movimientos.push({
+                  articulo_id: articuloId,
+                  tipo: 'venta',
+                  cantidad: -cantidadRequerida,
+                  stock_anterior: onHandActual,
+                  stock_posterior: nuevoOnHand,
+                  referencia_tipo: 'tarea',
+                  referencia_id: id,
+                  notas: `Consumo por tarea #${consecutivo} - Componente de producto`,
+                  usuario_id: user.id
+                });
+
+                articulosAfectados.push({
+                  articulo_id: articuloId,
+                  cantidad: cantidadRequerida,
+                  on_hand_anterior: onHandActual
+                });
+              }
+            }
+          }
+
+          // Ejecutar deducciones
+          if (movimientos.length > 0) {
+            // 1. Insertar movimientos
+            const { error: movError } = await supabase
+              .from('inventario_movimientos')
+              .insert(movimientos);
+
+            if (movError) {
+              console.error('Error creando movimientos de inventario:', movError);
+            }
+
+            // 2. Actualizar niveles de inventario (sin Math.max, ya validamos stock)
+            for (const articulo of articulosAfectados) {
+              const nuevoOnHand = articulo.on_hand_anterior - articulo.cantidad;
+              const { data: nivelActual } = await supabase
+                .from('inventario_niveles')
+                .select('reservado')
+                .eq('articulo_id', articulo.articulo_id)
+                .maybeSingle();
+              const reservado = nivelActual?.reservado || 0;
+
+              await supabase
+                .from('inventario_niveles')
+                .upsert({
+                  articulo_id: articulo.articulo_id,
+                  on_hand: nuevoOnHand,
+                  reservado,
+                  updated_at: new Date().toISOString()
+                }, { onConflict: 'articulo_id' });
+            }
+
+            // 3. Disparar evento para refrescar vistas de inventario
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('replenishment-updated'));
+            }
+          }
+        }
+        // ── FIN DEDUCCIÓN DE INVENTARIO ──────────────────────────────────
       }
 
       // Actualizar personal asignado si se proporciona

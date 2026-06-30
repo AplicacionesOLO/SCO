@@ -35,6 +35,7 @@ export default function MonitorPage() {
   const [comentarioError, setComentarioError] = useState<string | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [commentDigests, setCommentDigests] = useState<TareaCommentDigest[]>([]);
+  const [filterUnreadOnly, setFilterUnreadOnly] = useState(false);
   
   const [filtros, setFiltros] = useState<MonitorFilters>({
     estado: '',
@@ -140,6 +141,7 @@ export default function MonitorPage() {
   const handleClusterChange = (cluster: ClusterConUsuarios) => {
     setClusterActual(cluster);
     setFiltros({ estado: '', busqueda: '' });
+    setFilterUnreadOnly(false);
   };
 
   // Abrir comentarios de una tarea
@@ -147,7 +149,7 @@ export default function MonitorPage() {
     setTareaSeleccionada(tarea);
     setComentariosLoading(true);
     setShowComentarios(true);
-    markAsRead(tarea.id);
+    markAsRead(String(tarea.id));
     
     try {
       const coms = await monitorService.getComentarios(tarea.id);
@@ -228,7 +230,7 @@ export default function MonitorPage() {
     const read: Tarea[] = [];
 
     for (const t of tareas) {
-      if (unreadTareaIds.has(t.id)) {
+      if (unreadTareaIds.has(String(t.id))) {
         unread.push(t);
       } else {
         read.push(t);
@@ -236,8 +238,8 @@ export default function MonitorPage() {
     }
 
     unread.sort((a, b) => {
-      const dateA = getLatestCommentDate(a.id);
-      const dateB = getLatestCommentDate(b.id);
+      const dateA = getLatestCommentDate(String(a.id));
+      const dateB = getLatestCommentDate(String(b.id));
       if (dateA && dateB) return new Date(dateB).getTime() - new Date(dateA).getTime();
       if (dateA) return -1;
       if (dateB) return 1;
@@ -246,6 +248,18 @@ export default function MonitorPage() {
 
     return [...unread, ...read];
   }, [tareas, unreadTareaIds, getLatestCommentDate]);
+
+  const handleToggleUnreadFilter = () => {
+    setFilterUnreadOnly(prev => !prev);
+  };
+
+  // Aplicar filtro de "solo no leídas" sobre las tareas ya ordenadas
+  const tareasVisibles = useMemo(() => {
+    if (filterUnreadOnly) {
+      return tareasOrdenadas.filter(t => unreadTareaIds.has(String(t.id)));
+    }
+    return tareasOrdenadas;
+  }, [tareasOrdenadas, filterUnreadOnly, unreadTareaIds]);
 
   // ─── RENDER ──────────────────────────────────────────
 
@@ -262,6 +276,8 @@ export default function MonitorPage() {
           stats={stats}
           onClusterChange={handleClusterChange}
           unreadCount={totalUnread}
+          filterUnreadOnly={filterUnreadOnly}
+          onToggleUnreadFilter={handleToggleUnreadFilter}
         >
           {/* Banner de diagnóstico */}
           {debugInfo && !bannerDismissed && (
@@ -381,34 +397,44 @@ export default function MonitorPage() {
             </div>
           )}
 
-          {!error && !loading && tareasOrdenadas.length === 0 && (
+          {!error && !loading && tareasVisibles.length === 0 && (
             <div className="flex items-center justify-center py-16">
               <div className="text-center max-w-sm">
                 <div className="w-16 h-16 mx-auto rounded-full bg-background-100 flex items-center justify-center mb-4">
                   <i className="ri-inbox-line text-2xl text-foreground-400"></i>
                 </div>
                 <h3 className="text-base font-semibold text-foreground-900 mb-2">
-                  No hay tareas
+                  {filterUnreadOnly ? '¡Todo al día!' : 'No hay tareas'}
                 </h3>
                 <p className="text-sm text-foreground-500">
-                  {filtros.estado || filtros.busqueda
+                  {filterUnreadOnly
+                    ? 'No tenés tareas con comentarios sin leer. ¡Buen trabajo!'
+                    : filtros.estado || filtros.busqueda
                     ? 'No se encontraron tareas con los filtros actuales. Intentá ajustar la búsqueda.'
                     : `No hay tareas registradas para el cluster ${clusterActual?.nombre || 'seleccionado'}.`
                   }
                 </p>
+                {filterUnreadOnly && (
+                  <button
+                    onClick={handleToggleUnreadFilter}
+                    className="mt-4 px-4 py-2 bg-accent-100 text-accent-700 rounded-lg hover:bg-accent-200 transition-colors cursor-pointer text-sm font-medium whitespace-nowrap"
+                  >
+                    Ver todas las tareas
+                  </button>
+                )}
               </div>
             </div>
           )}
 
-          {!error && !loading && tareasOrdenadas.length > 0 && (
+          {!error && !loading && tareasVisibles.length > 0 && (
             <>
               <div className="space-y-3">
-                {tareasOrdenadas.map((tarea, idx) => {
-                  const isUnread = unreadTareaIds.has(tarea.id);
-                  const unreadCount = unreadCounts.get(tarea.id) || 0;
+                {tareasVisibles.map((tarea, idx) => {
+                  const isUnread = unreadTareaIds.has(String(tarea.id));
+                  const unreadCount = unreadCounts.get(String(tarea.id)) || 0;
 
-                  // Mostrar separador entre no leídos y leídos
-                  const prevWasUnread = idx > 0 && unreadTareaIds.has(tareasOrdenadas[idx - 1].id);
+                  // Mostrar separador entre no leídos y leídas
+                  const prevWasUnread = idx > 0 && unreadTareaIds.has(String(tareasVisibles[idx - 1].id));
                   const showSeparator = !isUnread && prevWasUnread;
 
                   return (
@@ -437,7 +463,7 @@ export default function MonitorPage() {
               </div>
               <div className="mt-4 flex items-center justify-between text-xs text-foreground-500">
                 <span>
-                  Mostrando {tareasOrdenadas.length} tarea{tareasOrdenadas.length !== 1 ? 's' : ''}
+                  Mostrando {tareasVisibles.length} tarea{tareasVisibles.length !== 1 ? 's' : ''}
                 </span>
                 {unreadTareaIds.size > 0 && (
                   <span className="flex items-center gap-1.5 text-red-600 font-medium">

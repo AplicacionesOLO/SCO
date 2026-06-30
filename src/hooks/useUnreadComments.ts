@@ -62,18 +62,20 @@ export function useUnreadComments(
   }, [currentDigestStr, compute]);
 
   const markAsRead = useCallback((tareaId: string) => {
-    localStorage.setItem(getKey(tareaId), new Date().toISOString());
+    const normalizedId = String(tareaId);
+    localStorage.setItem(getKey(normalizedId), new Date().toISOString());
     setState(prev => {
       const newIds = new Set(prev.ids);
-      newIds.delete(tareaId);
+      newIds.delete(normalizedId);
       const newCounts = new Map(prev.counts);
-      newCounts.delete(tareaId);
+      newCounts.delete(normalizedId);
       return { ids: newIds, counts: newCounts, total: newIds.size };
     });
   }, [userId]);
 
   const getLatestCommentDate = useCallback((tareaId: string): string | null => {
-    const digest = commentDigests.find(d => d.tareaId === tareaId);
+    const normalizedId = String(tareaId);
+    const digest = commentDigests.find(d => String(d.tareaId) === normalizedId);
     return digest?.latestCommentAt || null;
   }, [commentDigests]);
 

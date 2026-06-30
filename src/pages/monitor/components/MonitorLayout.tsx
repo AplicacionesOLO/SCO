@@ -8,6 +8,8 @@ interface MonitorLayoutProps {
   onClusterChange: (cluster: ClusterConUsuarios) => void;
   children: ReactNode;
   unreadCount?: number;
+  filterUnreadOnly?: boolean;
+  onToggleUnreadFilter?: () => void;
 }
 
 export default function MonitorLayout({
@@ -16,7 +18,9 @@ export default function MonitorLayout({
   stats,
   onClusterChange,
   children,
-  unreadCount = 0
+  unreadCount = 0,
+  filterUnreadOnly = false,
+  onToggleUnreadFilter
 }: MonitorLayoutProps) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-background-50">
@@ -24,20 +28,38 @@ export default function MonitorLayout({
       <header className="bg-white border-b border-background-200/70 px-4 md:px-6 py-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-accent-100 flex items-center justify-center flex-shrink-0 relative">
-              <i className="ri-eye-line text-xl text-accent-700"></i>
+            <button
+              onClick={onToggleUnreadFilter}
+              className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 relative transition-all cursor-pointer ${
+                filterUnreadOnly
+                  ? 'bg-red-100 ring-2 ring-red-300'
+                  : 'bg-accent-100 hover:bg-accent-200'
+              }`}
+              aria-label={filterUnreadOnly ? 'Mostrar todas las tareas' : 'Filtrar solo tareas con comentarios no leídos'}
+              title={filterUnreadOnly ? 'Click para ver todas las tareas' : 'Click para ver solo tareas con comentarios no leídos'}
+            >
+              <i className={`text-xl ${filterUnreadOnly ? 'ri-filter-line text-red-600' : 'ri-eye-line text-accent-700'}`}></i>
               {unreadCount > 0 && (
                 <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
-            </div>
+            </button>
             <div>
               <h1 className="text-xl font-bold text-foreground-950">
                 Monitor de Tareas
+                {filterUnreadOnly && (
+                  <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded-full">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                    Solo no leídas
+                  </span>
+                )}
               </h1>
               <p className="text-sm text-foreground-600">
-                Vista de seguimiento para clientes
+                {filterUnreadOnly
+                  ? `Mostrando ${unreadCount} tarea${unreadCount !== 1 ? 's' : ''} con comentarios sin leer`
+                  : 'Vista de seguimiento para clientes'
+                }
               </p>
             </div>
           </div>

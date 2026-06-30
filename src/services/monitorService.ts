@@ -513,7 +513,8 @@ class MonitorService {
 
     if (tareaIds.length === 0) return result;
 
-    if (this.mode === 'MOCK') {
+    // En MOCK y HYBRID: usar mock comentarios para que el tracking funcione
+    if (this.mode === 'MOCK' || this.mode === 'LIVE_HYBRID') {
       for (const tid of tareaIds) {
         const tareaComs = MOCK_COMENTARIOS.filter(c => c.tarea_id === tid);
         if (tareaComs.length > 0) {
@@ -521,10 +522,6 @@ class MonitorService {
           result.set(tid, { latestAt: maxDate, count: tareaComs.length });
         }
       }
-      return result;
-    }
-
-    if (this.mode === 'LIVE_HYBRID') {
       return result;
     }
 
@@ -562,16 +559,12 @@ class MonitorService {
   async getComentarios(tareaId: string): Promise<TareaComentario[]> {
     await this.ensureConnectionChecked();
 
-    if (this.mode === 'MOCK') {
+    // En MOCK y HYBRID: usar mock comentarios
+    if (this.mode === 'MOCK' || this.mode === 'LIVE_HYBRID') {
       return MOCK_COMENTARIOS.filter(c => c.tarea_id === tareaId);
     }
 
-    if (this.mode === 'LIVE_HYBRID') {
-      // Tabla tarea_comentarios no existe todavía
-      return [];
-    }
-
-    // LIVE_FULL
+    // LIVE_FULL: traer comentarios con info real del usuario
     try {
       const { data, error } = await supabase
         .from('tarea_comentarios')
@@ -582,18 +575,36 @@ class MonitorService {
       if (error) throw error;
       if (!data || data.length === 0) return [];
 
-      return data.map(c => ({
-        id: c.id,
-        tarea_id: String(c.tarea_id),
-        usuario_id: c.usuario_id,
-        comentario: c.comentario,
-        created_at: c.created_at,
-        usuario: {
-          id: c.usuario_id,
-          email: '',
-          nombre_completo: undefined
-        }
-      }));
+      // Obtener datos reales de los usuarios que comentaron
+      const userIds = [...new Set(data.map(c => c.usuario_id))];
+      const { data: usuariosData, error: usuariosError } = await supabase
+        .from('usuarios')
+        .select('id, email, nombre_completo')
+        .in('id', userIds);
+
+      if (usuariosError) {
+        console.warn('[MonitorService] Error cargando usuarios de comentarios:', usuariosError.message);
+      }
+
+      const usuariosMap = new Map(
+        (usuariosData || []).map(u => [u.id, u])
+      );
+
+      return data.map(c => {
+        const usuarioInfo = usuariosMap.get(c.usuario_id);
+        return {
+          id: c.id,
+          tarea_id: String(c.tarea_id),
+          usuario_id: c.usuario_id,
+          comentario: c.comentario,
+          created_at: c.created_at,
+          usuario: {
+            id: c.usuario_id,
+            email: usuarioInfo?.email || '',
+            nombre_completo: usuarioInfo?.nombre_completo || undefined
+          }
+        };
+      });
     } catch (err: any) {
       console.warn('[MonitorService] Error en getComentarios:', err.message);
       return [];

@@ -48,7 +48,9 @@ export default function MonitorTaskCard({
     : false;
 
   return (
-    <div className="bg-white border border-background-200/70 rounded-lg overflow-hidden transition-all hover:border-background-300/60">
+    <div className={`border border-background-200/70 rounded-lg overflow-hidden transition-all hover:border-background-300/60 ${
+      hasUnreadComment ? 'bg-red-50 border-red-200' : 'bg-white'
+    }`}>
       {/* Header de la tarjeta */}
       <div 
         className="p-4 md:p-5 cursor-pointer"

@@ -75,7 +75,7 @@ export const MOCK_CLUSTERS: ClusterConUsuarios[] = [
 export const MOCK_COMENTARIOS: TareaComentario[] = [
   {
     id: 'com-001',
-    tarea_id: 'tarea-001',
+    tarea_id: 'mock-COF-001',
     usuario_id: 'user-100',
     usuario: { id: 'user-100', email: 'visualizador1@cofersa.com', nombre_completo: 'Carlos Mendoza' },
     comentario: 'Revisé las etiquetas y todo está correcto con el diseño enviado. ¿Cuándo estiman terminar la producción?',
@@ -83,7 +83,7 @@ export const MOCK_COMENTARIOS: TareaComentario[] = [
   },
   {
     id: 'com-002',
-    tarea_id: 'tarea-001',
+    tarea_id: 'mock-COF-001',
     usuario_id: 'user-102',
     usuario: { id: 'user-102', email: 'supervisor@cofersa.com', nombre_completo: 'Juan Pérez' },
     comentario: 'La producción va según lo planeado. Estimamos terminar el lote completo para el viernes 6 de junio.',
@@ -91,7 +91,7 @@ export const MOCK_COMENTARIOS: TareaComentario[] = [
   },
   {
     id: 'com-003',
-    tarea_id: 'tarea-002',
+    tarea_id: 'mock-COF-002',
     usuario_id: 'user-101',
     usuario: { id: 'user-101', email: 'visualizador2@cofersa.com', nombre_completo: 'María Rodríguez' },
     comentario: 'Necesitamos confirmar la cantidad de unidades para el re-empaque. El cliente pidió ajustar de 500 a 750.',
@@ -99,11 +99,35 @@ export const MOCK_COMENTARIOS: TareaComentario[] = [
   },
   {
     id: 'com-004',
-    tarea_id: 'tarea-003',
+    tarea_id: 'mock-EPA-001',
     usuario_id: 'user-200',
     usuario: { id: 'user-200', email: 'visualizador@epa.com', nombre_completo: 'Ana Vargas' },
     comentario: 'Los códigos de barra están listos, falta la aprobación del registro sanitario.',
     created_at: '2026-06-02T14:00:00Z'
+  },
+  {
+    id: 'com-005',
+    tarea_id: 'mock-COF-003',
+    usuario_id: 'user-100',
+    usuario: { id: 'user-100', email: 'visualizador1@cofersa.com', nombre_completo: 'Carlos Mendoza' },
+    comentario: '¿Ya tienen el visto bueno de calidad para este lote? Necesitamos confirmar antes del viernes.',
+    created_at: '2026-06-04T11:20:00Z'
+  },
+  {
+    id: 'com-006',
+    tarea_id: 'mock-EPA-002',
+    usuario_id: 'user-201',
+    usuario: { id: 'user-201', email: 'coordinador@epa.com', nombre_completo: 'Luis Ramírez' },
+    comentario: 'Los registros sanitarios están en revisión con el Ministerio. Apenas tenga respuesta les aviso.',
+    created_at: '2026-06-03T16:00:00Z'
+  },
+  {
+    id: 'com-007',
+    tarea_id: 'mock-COF-005',
+    usuario_id: 'user-102',
+    usuario: { id: 'user-102', email: 'supervisor@cofersa.com', nombre_completo: 'Juan Pérez' },
+    comentario: 'Las licencias de importación ya fueron enviadas al agente aduanal. Quedamos a la espera.',
+    created_at: '2026-06-05T07:30:00Z'
   }
 ];
 

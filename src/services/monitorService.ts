@@ -628,48 +628,76 @@ class MonitorService {
 
       if (!tarea) return;
 
+      // 2. Obtener info del usuario que comentó
+      const { data: usuarioData } = await supabase
+        .from('usuarios')
+        .select('correo, nombre_completo')
+        .eq('id', usuarioId)
+        .maybeSingle();
+
+      const autorNombre = usuarioData?.nombre_completo || usuarioData?.correo || 'Usuario';
+      const autorEmail = usuarioData?.correo || '';
+
+      // 3. Disparar notificación SMTP directa al admin de la tienda
+      console.log('[MonitorService] Enviando notificación SMTP por comentario en tarea:', tareaId);
+      
+      const { error: notifError } = await supabase.functions.invoke('enviar-notificacion-tarea', {
+        body: {
+          tarea_id: tareaId,
+          tipo: 'comentario',
+          comentario,
+          comentario_autor: autorNombre,
+          comentario_autor_email: autorEmail
+        }
+      });
+
+      if (notifError) {
+        console.warn('[MonitorService] Error al enviar notificación SMTP de comentario:', notifError);
+      } else {
+        console.log('[MonitorService] Notificación SMTP de comentario enviada correctamente');
+      }
+
+      // 4. También disparar evento de correspondencia (para reglas adicionales si existen)
       const df = tarea.datos_formulario as any;
       const cliente = df?.cliente;
 
-      if (!cliente) return;
+      if (cliente) {
+        const { data: clustersDelCliente } = await supabase
+          .from('clusters')
+          .select('id')
+          .eq('cliente', cliente)
+          .eq('activo', true);
 
-      // 2. Obtener los IDs de clusters que cubren este cliente
-      const { data: clustersDelCliente } = await supabase
-        .from('clusters')
-        .select('id')
-        .eq('cliente', cliente)
-        .eq('activo', true);
-
-      if (!clustersDelCliente || clustersDelCliente.length === 0) return;
-
-      const clusterIds = clustersDelCliente.map(c => c.id);
-
-      // 3. Obtener usuarios de esos clusters
-      const { data: miembros } = await supabase
-        .from('cluster_usuarios')
-        .select('usuario_id')
-        .in('cluster_id', clusterIds);
-
-      const destinatariosCluster = (miembros || []).map(m => m.usuario_id);
-
-      // 4. Disparar evento de correspondencia
-      await supabase.functions.invoke('correspondencia-disparar-evento', {
-        body: {
-          evento: 'tarea.comentario_agregado',
-          tienda_id: tarea.tienda_id,
-          entity_data: {
-            tarea_id: tareaId,
-            comentario_id: comentarioId,
-            usuario_id: usuarioId,
-            comentario,
-            consecutivo: tarea.consecutivo,
-            descripcion_breve: tarea.descripcion_breve,
-            cliente,
-            email_solicitante: tarea.email_solicitante,
-            destinatarios_cluster: destinatariosCluster
-          }
+        let destinatariosCluster: string[] = [];
+        if (clustersDelCliente && clustersDelCliente.length > 0) {
+          const clusterIds = clustersDelCliente.map(c => c.id);
+          const { data: miembros } = await supabase
+            .from('cluster_usuarios')
+            .select('usuario_id')
+            .in('cluster_id', clusterIds);
+          destinatariosCluster = (miembros || []).map(m => m.usuario_id);
         }
-      });
+
+        await supabase.functions.invoke('correspondencia-disparar-evento', {
+          body: {
+            evento: 'tarea.comentario_agregado',
+            tienda_id: tarea.tienda_id,
+            entity_data: {
+              tarea_id: tareaId,
+              comentario_id: comentarioId,
+              usuario_id: usuarioId,
+              comentario,
+              consecutivo: tarea.consecutivo,
+              descripcion_breve: tarea.descripcion_breve,
+              cliente,
+              email_solicitante: tarea.email_solicitante,
+              destinatarios_cluster: destinatariosCluster,
+              comentario_autor: autorNombre,
+              comentario_autor_email: autorEmail
+            }
+          }
+        });
+      }
     } catch (err: any) {
       console.warn('[MonitorService] No se pudo disparar evento de correspondencia:', err.message);
     }

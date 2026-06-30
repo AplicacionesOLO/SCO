@@ -125,7 +125,11 @@ CREATE POLICY "Usuarios ven miembros de su cluster" ON cluster_usuarios
 -- ─── COMENTARIOS ─────────────────────────────────────
 ALTER TABLE tarea_comentarios ENABLE ROW LEVEL SECURITY;
 
--- Ver comentarios: solo si tenés acceso al cluster de esa tarea (o sos admin)
+-- Eliminar políticas anteriores para reemplazarlas
+DROP POLICY IF EXISTS "Ver comentarios de tareas accesibles" ON tarea_comentarios;
+DROP POLICY IF EXISTS "Crear comentarios en tareas accesibles" ON tarea_comentarios;
+
+-- Ver comentarios: solo si tenés acceso al cluster de esa tarea (o sos admin, o Visualizador por rol)
 CREATE POLICY "Ver comentarios de tareas accesibles" ON tarea_comentarios
   FOR SELECT USING (
     EXISTS (
@@ -149,11 +153,20 @@ CREATE POLICY "Ver comentarios de tareas accesibles" ON tarea_comentarios
           SELECT 1 FROM usuarios u
           WHERE u.id = auth.uid() AND u.rol = 'Admin'
         )
+        OR
+        -- 🆕 Visualizador: acceso por nombre de rol (sin depender de cluster_usuarios)
+        -- Ej: "Visualizador Cofersa" → ve tareas con cliente = 'COFERSA'
+        EXISTS (
+          SELECT 1 FROM usuarios u
+          WHERE u.id = auth.uid() 
+          AND u.rol LIKE 'Visualizador %'
+          AND UPPER(TRIM(REPLACE(u.rol, 'Visualizador ', ''))) = UPPER(TRIM(COALESCE(t.datos_formulario->>'cliente', '')))
+        )
       )
     )
   );
 
--- Crear comentarios: solo si sos miembro del cluster que cubre esa tarea
+-- Crear comentarios: solo si sos miembro del cluster que cubre esa tarea (o Visualizador por rol)
 CREATE POLICY "Crear comentarios en tareas accesibles" ON tarea_comentarios
   FOR INSERT WITH CHECK (
     auth.uid() = usuario_id
@@ -175,6 +188,14 @@ CREATE POLICY "Crear comentarios en tareas accesibles" ON tarea_comentarios
         EXISTS (
           SELECT 1 FROM usuarios u
           WHERE u.id = auth.uid() AND u.rol = 'Admin'
+        )
+        OR
+        -- 🆕 Visualizador por nombre de rol
+        EXISTS (
+          SELECT 1 FROM usuarios u
+          WHERE u.id = auth.uid() 
+          AND u.rol LIKE 'Visualizador %'
+          AND UPPER(TRIM(REPLACE(u.rol, 'Visualizador ', ''))) = UPPER(TRIM(COALESCE(t.datos_formulario->>'cliente', '')))
         )
       )
     )

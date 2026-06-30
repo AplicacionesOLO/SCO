@@ -188,6 +188,28 @@ export default function MonitorPage() {
         }
       );
       
+      // Marcar como leído para el autor del comentario
+      markAsRead(String(tareaSeleccionada.id));
+
+      // Refrescar el digest de esta tarea para que el badge se actualice
+      try {
+        const digestMap = await monitorService.getLatestCommentDigests([tareaSeleccionada.id]);
+        const val = digestMap.get(String(tareaSeleccionada.id));
+        setCommentDigests(prev => {
+          const filtered = prev.filter(d => d.tareaId !== String(tareaSeleccionada.id));
+          if (val) {
+            filtered.push({
+              tareaId: String(tareaSeleccionada.id),
+              latestCommentAt: val.latestAt,
+              commentCount: val.count
+            });
+          }
+          return filtered;
+        });
+      } catch {
+        // No bloqueamos si falla el refresh del digest
+      }
+      
       await cargarComentarios(tareaSeleccionada.id);
     } catch (err: any) {
       console.error('Error al enviar comentario:', err);

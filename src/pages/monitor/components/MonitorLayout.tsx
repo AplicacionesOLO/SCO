@@ -7,6 +7,7 @@ interface MonitorLayoutProps {
   stats: MonitorStats | null;
   onClusterChange: (cluster: ClusterConUsuarios) => void;
   children: ReactNode;
+  unreadCount?: number;
 }
 
 export default function MonitorLayout({
@@ -14,7 +15,8 @@ export default function MonitorLayout({
   clusters,
   stats,
   onClusterChange,
-  children
+  children,
+  unreadCount = 0
 }: MonitorLayoutProps) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-background-50">
@@ -22,8 +24,13 @@ export default function MonitorLayout({
       <header className="bg-white border-b border-background-200/70 px-4 md:px-6 py-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-accent-100 flex items-center justify-center flex-shrink-0">
+            <div className="w-10 h-10 rounded-lg bg-accent-100 flex items-center justify-center flex-shrink-0 relative">
               <i className="ri-eye-line text-xl text-accent-700"></i>
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </div>
             <div>
               <h1 className="text-xl font-bold text-foreground-950">

@@ -501,6 +501,64 @@ class MonitorService {
   // COMENTARIOS
   // ═══════════════════════════════════════════════════════
 
+  /**
+   * Obtiene un digest ligero con la fecha del último comentario y el conteo
+   * para cada tarea. Útil para determinar notificaciones no leídas sin
+   * cargar todos los comentarios.
+   */
+  async getLatestCommentDigests(tareaIds: string[]): Promise<Map<string, { latestAt: string; count: number }>> {
+    await this.ensureConnectionChecked();
+
+    const result = new Map<string, { latestAt: string; count: number }>();
+
+    if (tareaIds.length === 0) return result;
+
+    if (this.mode === 'MOCK') {
+      for (const tid of tareaIds) {
+        const tareaComs = MOCK_COMENTARIOS.filter(c => c.tarea_id === tid);
+        if (tareaComs.length > 0) {
+          const maxDate = tareaComs.reduce((max, c) => c.created_at > max ? c.created_at : max, tareaComs[0].created_at);
+          result.set(tid, { latestAt: maxDate, count: tareaComs.length });
+        }
+      }
+      return result;
+    }
+
+    if (this.mode === 'LIVE_HYBRID') {
+      return result;
+    }
+
+    // LIVE_FULL
+    try {
+      const numericIds = tareaIds.map(id => parseInt(id, 10)).filter(n => !isNaN(n));
+      if (numericIds.length === 0) return result;
+
+      const { data, error } = await supabase
+        .from('tarea_comentarios')
+        .select('tarea_id, created_at')
+        .in('tarea_id', numericIds)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (data) {
+        for (const row of data) {
+          const tid = String(row.tarea_id);
+          const existing = result.get(tid);
+          if (!existing) {
+            result.set(tid, { latestAt: row.created_at, count: 1 });
+          } else {
+            result.set(tid, { latestAt: existing.latestAt, count: existing.count + 1 });
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('[MonitorService] Error en getLatestCommentDigests:', err.message);
+    }
+
+    return result;
+  }
+
   async getComentarios(tareaId: string): Promise<TareaComentario[]> {
     await this.ensureConnectionChecked();
 

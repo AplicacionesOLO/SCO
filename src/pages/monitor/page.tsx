@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Sidebar from '../../components/feature/Sidebar';
 import TopBar from '../../components/feature/TopBar';
 import MonitorLayout from './components/MonitorLayout';
@@ -7,6 +7,8 @@ import ComentarioModal from './components/ComentarioModal';
 import { monitorService } from '../../services/monitorService';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useUnreadComments } from '../../hooks/useUnreadComments';
+import type { TareaCommentDigest } from '../../hooks/useUnreadComments';
 import type { Tarea } from '../../types/tarea';
 import type { ClusterConUsuarios, TareaComentario, MonitorFilters, MonitorStats, MonitorDebugInfo } from '../../types/monitor';
 
@@ -32,6 +34,7 @@ export default function MonitorPage() {
   const [debugInfo, setDebugInfo] = useState<MonitorDebugInfo | null>(null);
   const [comentarioError, setComentarioError] = useState<string | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [commentDigests, setCommentDigests] = useState<TareaCommentDigest[]>([]);
   
   const [filtros, setFiltros] = useState<MonitorFilters>({
     estado: '',
@@ -105,6 +108,23 @@ export default function MonitorPage() {
       );
 
       setTareas(tareasFiltradas);
+
+      // Cargar digest de comentarios para notificaciones no leídas
+      if (tareasFiltradas.length > 0) {
+        const tareaIds = tareasFiltradas.map(t => t.id);
+        const digestMap = await monitorService.getLatestCommentDigests(tareaIds);
+        const digests: TareaCommentDigest[] = [];
+        digestMap.forEach((val, tareaId) => {
+          digests.push({
+            tareaId,
+            latestCommentAt: val.latestAt,
+            commentCount: val.count
+          });
+        });
+        setCommentDigests(digests);
+      } else {
+        setCommentDigests([]);
+      }
       
       const statsData = await monitorService.getStats(clusterActual.cliente);
       setStats(statsData);
@@ -127,6 +147,7 @@ export default function MonitorPage() {
     setTareaSeleccionada(tarea);
     setComentariosLoading(true);
     setShowComentarios(true);
+    markAsRead(tarea.id);
     
     try {
       const coms = await monitorService.getComentarios(tarea.id);
@@ -190,6 +211,42 @@ export default function MonitorPage() {
     }
   };
 
+  // ─── COMENTARIOS NO LEÍDOS ──────────────────────────
+
+  const {
+    unreadTareaIds,
+    unreadCounts,
+    hasUnread,
+    totalUnread,
+    markAsRead,
+    getLatestCommentDate
+  } = useUnreadComments(user?.id || '', commentDigests);
+
+  // Ordenar tareas: no leídas primero por fecha de comentario (más reciente primero), luego el resto por created_at
+  const tareasOrdenadas = useMemo(() => {
+    const unread: Tarea[] = [];
+    const read: Tarea[] = [];
+
+    for (const t of tareas) {
+      if (unreadTareaIds.has(t.id)) {
+        unread.push(t);
+      } else {
+        read.push(t);
+      }
+    }
+
+    unread.sort((a, b) => {
+      const dateA = getLatestCommentDate(a.id);
+      const dateB = getLatestCommentDate(b.id);
+      if (dateA && dateB) return new Date(dateB).getTime() - new Date(dateA).getTime();
+      if (dateA) return -1;
+      if (dateB) return 1;
+      return 0;
+    });
+
+    return [...unread, ...read];
+  }, [tareas, unreadTareaIds, getLatestCommentDate]);
+
   // ─── RENDER ──────────────────────────────────────────
 
   return (
@@ -204,6 +261,7 @@ export default function MonitorPage() {
           clusters={clusters}
           stats={stats}
           onClusterChange={handleClusterChange}
+          unreadCount={totalUnread}
         >
           {/* Banner de diagnóstico */}
           {debugInfo && !bannerDismissed && (
@@ -323,7 +381,7 @@ export default function MonitorPage() {
             </div>
           )}
 
-          {!error && !loading && tareas.length === 0 && (
+          {!error && !loading && tareasOrdenadas.length === 0 && (
             <div className="flex items-center justify-center py-16">
               <div className="text-center max-w-sm">
                 <div className="w-16 h-16 mx-auto rounded-full bg-background-100 flex items-center justify-center mb-4">
@@ -342,22 +400,51 @@ export default function MonitorPage() {
             </div>
           )}
 
-          {!error && !loading && tareas.length > 0 && (
+          {!error && !loading && tareasOrdenadas.length > 0 && (
             <>
               <div className="space-y-3">
-                {tareas.map(tarea => (
-                  <MonitorTaskCard
-                    key={tarea.id}
-                    tarea={tarea}
-                    comentarios={[]}
-                    canComment={canComment}
-                    onVerComentarios={handleVerComentarios}
-                    onAgregarComentario={handleAgregarComentario}
-                  />
-                ))}
+                {tareasOrdenadas.map((tarea, idx) => {
+                  const isUnread = unreadTareaIds.has(tarea.id);
+                  const unreadCount = unreadCounts.get(tarea.id) || 0;
+
+                  // Mostrar separador entre no leídos y leídos
+                  const prevWasUnread = idx > 0 && unreadTareaIds.has(tareasOrdenadas[idx - 1].id);
+                  const showSeparator = !isUnread && prevWasUnread;
+
+                  return (
+                    <div key={tarea.id}>
+                      {showSeparator && (
+                        <div className="flex items-center gap-3 mb-3 pt-1">
+                          <div className="flex-1 h-px bg-background-200/70"></div>
+                          <span className="text-xs font-medium text-foreground-500 whitespace-nowrap">
+                            Tareas leídas
+                          </span>
+                          <div className="flex-1 h-px bg-background-200/70"></div>
+                        </div>
+                      )}
+                      <MonitorTaskCard
+                        tarea={tarea}
+                        comentarios={[]}
+                        canComment={canComment}
+                        hasUnreadComment={isUnread}
+                        unreadCommentCount={unreadCount}
+                        onVerComentarios={handleVerComentarios}
+                        onAgregarComentario={handleAgregarComentario}
+                      />
+                    </div>
+                  );
+                })}
               </div>
-              <div className="mt-4 text-xs text-foreground-500">
-                Mostrando {tareas.length} tarea{tareas.length !== 1 ? 's' : ''}
+              <div className="mt-4 flex items-center justify-between text-xs text-foreground-500">
+                <span>
+                  Mostrando {tareasOrdenadas.length} tarea{tareasOrdenadas.length !== 1 ? 's' : ''}
+                </span>
+                {unreadTareaIds.size > 0 && (
+                  <span className="flex items-center gap-1.5 text-red-600 font-medium">
+                    <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                    {unreadTareaIds.size} sin leer
+                  </span>
+                )}
               </div>
             </>
           )}

@@ -6,6 +6,8 @@ interface MonitorTaskCardProps {
   tarea: Tarea;
   comentarios: TareaComentario[];
   canComment?: boolean;
+  hasUnreadComment?: boolean;
+  unreadCommentCount?: number;
   onVerComentarios: (tarea: Tarea) => void;
   onAgregarComentario: (tarea: Tarea) => void;
 }
@@ -30,6 +32,8 @@ export default function MonitorTaskCard({
   tarea,
   comentarios,
   canComment = false,
+  hasUnreadComment = false,
+  unreadCommentCount = 0,
   onVerComentarios,
   onAgregarComentario
 }: MonitorTaskCardProps) {
@@ -110,6 +114,18 @@ export default function MonitorTaskCard({
 
           {/* Acciones y badge de comentarios */}
           <div className="flex flex-col items-end gap-2 flex-shrink-0">
+            {hasUnreadComment && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onVerComentarios(tarea); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors cursor-pointer whitespace-nowrap animate-pulse"
+              >
+                <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"></span>
+                {unreadCommentCount > 1
+                  ? `${unreadCommentCount} comentarios nuevos`
+                  : 'Nuevo comentario sin leer'
+                }
+              </button>
+            )}
             {canComment && (
               <button
                 onClick={(e) => { e.stopPropagation(); onAgregarComentario(tarea); }}

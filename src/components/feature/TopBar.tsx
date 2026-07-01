@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import ConfirmationDialog from '../base/ConfirmationDialog';
+import NotificationBell from './NotificationBell';
 
 interface TopBarProps {
   onToggleSidebar: () => void;
@@ -136,15 +137,8 @@ export default function TopBar({ onToggleSidebar }: TopBarProps) {
               </div>
             )}
 
-            {/* Botones de acción */}
-            <button 
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-              title="Notificaciones"
-            >
-              <i className="ri-notification-line text-xl text-gray-600"></i>
-              {/* Badge de notificaciones */}
-              <span className="absolute -mt-8 ml-4 w-2 h-2 bg-red-500 rounded-full"></span>
-            </button>
+            {/* Campanita de notificaciones unificada */}
+            <NotificationBell />
             
             <button 
               className="p-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"

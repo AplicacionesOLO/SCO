@@ -1127,7 +1127,8 @@ export default function TareaProcesarModal({ tarea, onClose, onSave }: TareaProc
       onSave();
     } catch (error) {
       console.error('Error actualizando tarea:', error);
-      showNotification('error', 'Error al actualizar la tarea: ' + (error as Error).message);
+      const errMsg = error instanceof Error ? error.message : 'Ocurrió un error inesperado';
+      showNotification('error', 'Error al actualizar la tarea', errMsg);
     } finally {
       setLoading(false);
     }
@@ -2153,6 +2154,7 @@ export default function TareaProcesarModal({ tarea, onClose, onSave }: TareaProc
           type={notification.type}
           message={notification.message}
           onClose={hideNotification}
+          title={notification.title}
         />
 
         <ConfirmationDialog

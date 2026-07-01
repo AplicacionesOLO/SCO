@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 interface NotificationPopupProps {
   isOpen: boolean;
   type: 'success' | 'error' | 'warning' | 'info';
+  title?: string;
   message: string;
   onClose: () => void;
   duration?: number;
@@ -11,6 +12,7 @@ interface NotificationPopupProps {
 const NotificationPopup: React.FC<NotificationPopupProps> = ({
   isOpen,
   type,
+  title,
   message,
   onClose,
   duration = 4000,
@@ -37,6 +39,9 @@ const NotificationPopup: React.FC<NotificationPopupProps> = ({
   }, [isOpen, duration, onClose]);
 
   if (!isOpen) return null;
+
+  // Determinar el texto a mostrar: message primero, si no hay, title, si no, vacío
+  const displayText = message || title || '';
 
   const getIcon = () => {
     switch (type) {
@@ -113,8 +118,13 @@ const NotificationPopup: React.FC<NotificationPopupProps> = ({
 
             {/* Message */}
             <div className="flex-1 min-w-0">
+              {title && message && (
+                <p className={`${colors.text} text-sm font-semibold leading-relaxed`}>
+                  {title}
+                </p>
+              )}
               <p className={`${colors.text} text-sm leading-relaxed`}>
-                {message}
+                {displayText}
               </p>
             </div>
 

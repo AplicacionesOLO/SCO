@@ -58,6 +58,8 @@ export interface TareaComentario {
 export interface MonitorFilters {
   estado?: TareaEstado | '';
   busqueda?: string;
+  fechaDesde?: string;
+  fechaHasta?: string;
 }
 
 // ─── STATS DEL MONITOR ──────────────────────────────────

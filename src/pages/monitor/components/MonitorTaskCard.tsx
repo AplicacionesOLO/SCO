@@ -10,6 +10,7 @@ interface MonitorTaskCardProps {
   unreadCommentCount?: number;
   onVerComentarios: (tarea: Tarea) => void;
   onAgregarComentario: (tarea: Tarea) => void;
+  onExpand?: (tarea: Tarea) => void;
 }
 
 const ESTADO_COLORS: Record<string, string> = {
@@ -28,6 +29,22 @@ const ESTADO_ICONS: Record<string, string> = {
   'Finalizado': 'ri-check-double-line'
 };
 
+const ESTADO_BG: Record<string, string> = {
+  'En Cola': 'bg-sky-50/30',
+  'En Proceso': 'bg-amber-50/30',
+  'Produciendo': 'bg-emerald-50/30',
+  'Esperando suministros': 'bg-orange-50/40',
+  'Finalizado': 'bg-slate-50/20'
+};
+
+const ESTADO_BORDER_LEFT: Record<string, string> = {
+  'En Cola': 'border-l-sky-400/50',
+  'En Proceso': 'border-l-amber-400/50',
+  'Produciendo': 'border-l-emerald-400/50',
+  'Esperando suministros': 'border-l-orange-400/50',
+  'Finalizado': 'border-l-slate-300/40'
+};
+
 export default function MonitorTaskCard({
   tarea,
   comentarios,
@@ -35,26 +52,41 @@ export default function MonitorTaskCard({
   hasUnreadComment = false,
   unreadCommentCount = 0,
   onVerComentarios,
-  onAgregarComentario
+  onAgregarComentario,
+  onExpand
 }: MonitorTaskCardProps) {
   const [expandido, setExpandido] = useState(false);
+
+  const handleToggleExpand = () => {
+    const nuevoEstado = !expandido;
+    setExpandido(nuevoEstado);
+    if (nuevoEstado && onExpand) {
+      onExpand(tarea);
+    }
+  };
 
   const df = tarea.datos_formulario as any;
   const estadoColor = ESTADO_COLORS[tarea.estado] || 'bg-gray-100 text-gray-700';
   const estadoIcon = ESTADO_ICONS[tarea.estado] || 'ri-question-line';
+  const estadoBg = ESTADO_BG[tarea.estado] || 'bg-white';
+  const estadoBorderLeft = ESTADO_BORDER_LEFT[tarea.estado] || 'border-l-transparent';
   const comentariosCount = comentarios.length;
   const fechaVencida = tarea.fecha_estimada_entrega 
     ? new Date(tarea.fecha_estimada_entrega) < new Date() 
     : false;
 
   return (
-    <div className={`border border-background-200/70 rounded-lg overflow-hidden transition-all hover:border-background-300/60 ${
-      hasUnreadComment ? 'bg-red-50 border-red-200' : 'bg-white'
-    }`}>
+    <div className={`border border-background-200/70 rounded-lg overflow-hidden transition-all duration-300
+      border-l-[3px] ${estadoBorderLeft}
+      shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_3px_rgba(0,0,0,0.03)]
+      hover:shadow-[0_4px_12px_rgba(0,0,0,0.06),0_2px_4px_rgba(0,0,0,0.04)]
+      hover:-translate-y-0.5
+      ${hasUnreadComment ? '!bg-red-50 !border-red-200 !border-l-[3px] !border-l-red-400' : estadoBg}
+    `}>
       {/* Header de la tarjeta */}
       <div 
         className="p-4 md:p-5 cursor-pointer"
-        onClick={() => setExpandido(!expandido)}
+        onClick={handleToggleExpand}
       >
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
@@ -62,12 +94,12 @@ export default function MonitorTaskCard({
               <span className="text-sm font-bold text-foreground-950">
                 {tarea.consecutivo}
               </span>
-              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${estadoColor}`}>
+              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium shadow-[0_1px_2px_rgba(0,0,0,0.04)] ${estadoColor}`}>
                 <i className={`${estadoIcon} text-xs`}></i>
                 {tarea.estado}
               </span>
               {fechaVencida && tarea.estado !== 'Finalizado' && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
                   <i className="ri-alert-line text-xs"></i>
                   Vencida
                 </span>
@@ -147,7 +179,7 @@ export default function MonitorTaskCard({
               </button>
             )}
             <button
-              onClick={(e) => { e.stopPropagation(); setExpandido(!expandido); }}
+              onClick={(e) => { e.stopPropagation(); handleToggleExpand(); }}
               className="text-foreground-400 hover:text-foreground-700 transition-colors cursor-pointer"
             >
               <i className={`${expandido ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'} text-lg`}></i>

@@ -436,6 +436,14 @@ class MonitorService {
         query = query.eq('estado', filtros.estado);
       }
 
+      if (filtros?.fechaDesde) {
+        query = query.gte('created_at', `${filtros.fechaDesde}T00:00:00`);
+      }
+
+      if (filtros?.fechaHasta) {
+        query = query.lte('created_at', `${filtros.fechaHasta}T23:59:59`);
+      }
+
       if (filtros?.busqueda) {
         const q = `%${filtros.busqueda}%`;
         query = query.or(`consecutivo.ilike.${q},descripcion_breve.ilike.${q}`);
@@ -847,6 +855,14 @@ class MonitorService {
 
     if (filtros?.estado) {
       resultado = resultado.filter(t => t.estado === filtros.estado);
+    }
+    if (filtros?.fechaDesde) {
+      const desde = new Date(`${filtros.fechaDesde}T00:00:00`);
+      resultado = resultado.filter(t => new Date(t.created_at) >= desde);
+    }
+    if (filtros?.fechaHasta) {
+      const hasta = new Date(`${filtros.fechaHasta}T23:59:59`);
+      resultado = resultado.filter(t => new Date(t.created_at) <= hasta);
     }
     if (filtros?.busqueda) {
       const q = filtros.busqueda.toLowerCase();

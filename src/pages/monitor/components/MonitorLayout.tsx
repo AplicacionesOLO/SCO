@@ -10,6 +10,8 @@ interface MonitorLayoutProps {
   unreadCount?: number;
   filterUnreadOnly?: boolean;
   onToggleUnreadFilter?: () => void;
+  onMarkAllAsRead?: () => void;
+  hasUnread?: boolean;
 }
 
 export default function MonitorLayout({
@@ -20,7 +22,9 @@ export default function MonitorLayout({
   children,
   unreadCount = 0,
   filterUnreadOnly = false,
-  onToggleUnreadFilter
+  onToggleUnreadFilter,
+  onMarkAllAsRead,
+  hasUnread = false
 }: MonitorLayoutProps) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-background-50">
@@ -45,6 +49,16 @@ export default function MonitorLayout({
                 </span>
               )}
             </button>
+            {hasUnread && onMarkAllAsRead && (
+              <button
+                onClick={onMarkAllAsRead}
+                className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-foreground-100 hover:bg-foreground-200 transition-all cursor-pointer"
+                aria-label="Marcar todo como leído"
+                title="Marcar todas las tareas como leídas"
+              >
+                <i className="ri-check-double-line text-xl text-foreground-600"></i>
+              </button>
+            )}
             <div>
               <h1 className="text-xl font-bold text-foreground-950">
                 Monitor de Tareas

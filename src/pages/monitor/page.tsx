@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Sidebar from '../../components/feature/Sidebar';
 import TopBar from '../../components/feature/TopBar';
 import MonitorLayout from './components/MonitorLayout';
 import MonitorTaskCard from './components/MonitorTaskCard';
 import ComentarioModal from './components/ComentarioModal';
 import { monitorService } from '../../services/monitorService';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useUnreadComments } from '../../hooks/useUnreadComments';
@@ -36,10 +37,18 @@ export default function MonitorPage() {
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [commentDigests, setCommentDigests] = useState<TareaCommentDigest[]>([]);
   const [filterUnreadOnly, setFilterUnreadOnly] = useState(false);
+  const [loadedComments, setLoadedComments] = useState<Map<string, TareaComentario[]>>(new Map());
+  const tareasRef = useRef<Tarea[]>([]);
   
+  const currentDate = new Date();
+  const firstOfMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
+  const today = currentDate.toISOString().split('T')[0];
+
   const [filtros, setFiltros] = useState<MonitorFilters>({
     estado: '',
-    busqueda: ''
+    busqueda: '',
+    fechaDesde: firstOfMonth,
+    fechaHasta: today
   });
 
   // Cargar clusters del usuario autenticado
@@ -109,6 +118,7 @@ export default function MonitorPage() {
       );
 
       setTareas(tareasFiltradas);
+      tareasRef.current = tareasFiltradas;
 
       // Cargar digest de comentarios para notificaciones no leídas
       if (tareasFiltradas.length > 0) {
@@ -139,9 +149,13 @@ export default function MonitorPage() {
 
   // Cambiar cluster
   const handleClusterChange = (cluster: ClusterConUsuarios) => {
+    const cd = new Date();
+    const fom = `${cd.getFullYear()}-${String(cd.getMonth() + 1).padStart(2, '0')}-01`;
+    const td = cd.toISOString().split('T')[0];
     setClusterActual(cluster);
-    setFiltros({ estado: '', busqueda: '' });
+    setFiltros({ estado: '', busqueda: '', fechaDesde: fom, fechaHasta: td });
     setFilterUnreadOnly(false);
+    setLoadedComments(new Map());
   };
 
   // Abrir comentarios de una tarea
@@ -159,6 +173,24 @@ export default function MonitorPage() {
       setComentarios([]);
     } finally {
       setComentariosLoading(false);
+    }
+  };
+
+  // Expandir card → cargar comentarios on-demand
+  const handleExpandCard = async (tarea: Tarea) => {
+    const tid = String(tarea.id);
+    // Si ya tenemos los comentarios cargados, no volver a fetchear
+    if (loadedComments.has(tid)) return;
+
+    try {
+      const coms = await monitorService.getComentarios(tarea.id);
+      setLoadedComments(prev => {
+        const next = new Map(prev);
+        next.set(tid, coms);
+        return next;
+      });
+    } catch {
+      // Silencioso: si falla, simplemente no mostramos comentarios en la card expandida
     }
   };
 
@@ -211,6 +243,14 @@ export default function MonitorPage() {
       }
       
       await cargarComentarios(tareaSeleccionada.id);
+      
+      // También actualizar el cache de loadedComments para cards expandidas
+      const tid = String(tareaSeleccionada.id);
+      setLoadedComments(prev => {
+        const next = new Map(prev);
+        next.delete(tid); // Invalidar cache → próximo expand recarga fresco
+        return next;
+      });
     } catch (err: any) {
       console.error('Error al enviar comentario:', err);
       setComentarioError(err.message || 'No se pudo enviar el comentario.');
@@ -223,7 +263,15 @@ export default function MonitorPage() {
   };
 
   const handleEstadoChange = (estado: string) => {
-    setFiltros(prev => ({ ...prev, estado: estado as MonitorFilters['estado'] }));
+    setFiltros(prev => ({ ...prev, estado: prev.estado === estado ? '' : estado as MonitorFilters['estado'] }));
+  };
+
+  const handleFechaDesdeChange = (fecha: string) => {
+    setFiltros(prev => ({ ...prev, fechaDesde: fecha || undefined }));
+  };
+
+  const handleFechaHastaChange = (fecha: string) => {
+    setFiltros(prev => ({ ...prev, fechaHasta: fecha || undefined }));
   };
 
   const cargarComentarios = async (tareaId: string) => {
@@ -243,6 +291,7 @@ export default function MonitorPage() {
     hasUnread,
     totalUnread,
     markAsRead,
+    markAllAsRead,
     getLatestCommentDate
   } = useUnreadComments(user?.id || '', commentDigests);
 
@@ -283,6 +332,58 @@ export default function MonitorPage() {
     return tareasOrdenadas;
   }, [tareasOrdenadas, filterUnreadOnly, unreadTareaIds]);
 
+  // ─── REALTIME: suscripción a nuevos comentarios ──────
+  useEffect(() => {
+    if (debugInfo?.mode !== 'LIVE_FULL' || !clusterActual) return;
+
+    const channel = supabase
+      .channel(`monitor-comments-${clusterActual.cliente}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'tarea_comentarios' },
+        async (payload: any) => {
+          const newTareaId = String(payload.new?.tarea_id || '');
+          if (!newTareaId) return;
+
+          // Verificar que la tarea pertenece al cluster actual
+          const isInCluster = tareasRef.current.some(t => String(t.id) === newTareaId);
+          if (!isInCluster) return;
+
+          // Refrescar digest de esta tarea
+          try {
+            const digestMap = await monitorService.getLatestCommentDigests([newTareaId]);
+            const val = digestMap.get(newTareaId);
+            setCommentDigests(prev => {
+              const filtered = prev.filter(d => d.tareaId !== newTareaId);
+              if (val) {
+                filtered.push({
+                  tareaId: newTareaId,
+                  latestCommentAt: val.latestAt,
+                  commentCount: val.count
+                });
+              }
+              return filtered;
+            });
+          } catch {
+            // Silencioso
+          }
+
+          // Refrescar comentarios si la card está expandida
+          setLoadedComments(prev => {
+            if (!prev.has(newTareaId)) return prev;
+            const next = new Map(prev);
+            next.delete(newTareaId); // Invalidar caché → fuerza reload al re-expandir
+            return next;
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [debugInfo?.mode, clusterActual]);
+
   // ─── RENDER ──────────────────────────────────────────
 
   return (
@@ -300,6 +401,8 @@ export default function MonitorPage() {
           unreadCount={totalUnread}
           filterUnreadOnly={filterUnreadOnly}
           onToggleUnreadFilter={handleToggleUnreadFilter}
+          onMarkAllAsRead={markAllAsRead}
+          hasUnread={hasUnread}
         >
           {/* Banner de diagnóstico */}
           {debugInfo && !bannerDismissed && (
@@ -346,30 +449,111 @@ export default function MonitorPage() {
             </div>
           )}
 
-          {/* Barra de filtros */}
-          <div className="flex flex-col sm:flex-row gap-3 mb-5">
-            <div className="flex-1 relative">
-              <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-foreground-400"></i>
-              <input
-                type="text"
-                placeholder="Buscar por consecutivo o descripción..."
-                value={filtros.busqueda || ''}
-                onChange={(e) => handleBusquedaChange(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 text-sm border border-background-200/70 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 bg-white"
-              />
+          {/* Barra de filtros con efecto blur */}
+          <div className="mb-5 rounded-2xl border border-background-200/50 bg-white/70 backdrop-blur-xl overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_3px_rgba(0,0,0,0.03)]">
+            {/* Fila superior: búsqueda + fechas */}
+            <div className="p-4 pb-2">
+              <div className="flex flex-col lg:flex-row gap-3">
+                {/* Barra de búsqueda blur */}
+                <div className="flex-1 relative group">
+                  <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-primary-400/10 via-accent-400/10 to-primary-400/10 opacity-0 group-focus-within:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+                  <div className="relative flex items-center bg-background-100/80 backdrop-blur-md rounded-xl border border-background-200/50 group-focus-within:border-primary-300/60 group-focus-within:bg-white/90 transition-all duration-300">
+                    <div className="pl-4 pr-2 flex items-center">
+                      <i className="ri-search-line text-base text-foreground-400 group-focus-within:text-primary-500 transition-colors duration-300"></i>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Buscar por consecutivo o descripción..."
+                      value={filtros.busqueda || ''}
+                      onChange={(e) => handleBusquedaChange(e.target.value)}
+                      className="w-full py-2.5 pr-4 bg-transparent text-sm text-foreground-900 placeholder:text-foreground-400 focus:outline-none rounded-xl"
+                    />
+                    {filtros.busqueda && (
+                      <button
+                        onClick={() => handleBusquedaChange('')}
+                        className="mr-2 w-7 h-7 rounded-full flex items-center justify-center bg-foreground-200/60 hover:bg-foreground-300/60 transition-colors cursor-pointer flex-shrink-0"
+                        aria-label="Limpiar búsqueda"
+                      >
+                        <i className="ri-close-line text-xs text-foreground-500"></i>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Filtros de fecha */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="flex items-center gap-1.5 bg-background-100/80 backdrop-blur-md rounded-xl border border-background-200/50 px-3 py-2">
+                    <i className="ri-calendar-line text-sm text-foreground-500"></i>
+                    <input
+                      type="date"
+                      value={filtros.fechaDesde || ''}
+                      onChange={(e) => handleFechaDesdeChange(e.target.value)}
+                      className="text-sm text-foreground-700 bg-transparent focus:outline-none cursor-pointer w-[130px] [color-scheme:light]"
+                    />
+                  </div>
+                  <span className="text-xs text-foreground-400 font-medium">—</span>
+                  <div className="flex items-center gap-1.5 bg-background-100/80 backdrop-blur-md rounded-xl border border-background-200/50 px-3 py-2">
+                    <i className="ri-calendar-check-line text-sm text-foreground-500"></i>
+                    <input
+                      type="date"
+                      value={filtros.fechaHasta || ''}
+                      onChange={(e) => handleFechaHastaChange(e.target.value)}
+                      className="text-sm text-foreground-700 bg-transparent focus:outline-none cursor-pointer w-[130px] [color-scheme:light]"
+                    />
+                  </div>
+                  {/* Quick presets */}
+                  <button
+                    onClick={() => {
+                      const td = new Date().toISOString().split('T')[0];
+                      handleFechaDesdeChange(td);
+                      handleFechaHastaChange(td);
+                    }}
+                    className={`px-3 py-2 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer whitespace-nowrap border ${
+                      filtros.fechaDesde === today && filtros.fechaHasta === today
+                        ? 'bg-accent-500 text-background-50 border-accent-500 shadow-[0_2px_6px_rgba(0,0,0,0.10)]'
+                        : 'bg-background-100/80 backdrop-blur-md border-background-200/50 text-foreground-600 hover:bg-background-200/70 hover:shadow-[0_1px_3px_rgba(0,0,0,0.04)]'
+                    }`}
+                  >
+                    Hoy
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleFechaDesdeChange(firstOfMonth);
+                      handleFechaHastaChange(today);
+                    }}
+                    className={`px-3 py-2 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer whitespace-nowrap border ${
+                      filtros.fechaDesde === firstOfMonth && filtros.fechaHasta === today
+                        ? 'bg-accent-500 text-background-50 border-accent-500 shadow-[0_2px_6px_rgba(0,0,0,0.10)]'
+                        : 'bg-background-100/80 backdrop-blur-md border-background-200/50 text-foreground-600 hover:bg-background-200/70 hover:shadow-[0_1px_3px_rgba(0,0,0,0.04)]'
+                    }`}
+                  >
+                    Este mes
+                  </button>
+                </div>
+              </div>
             </div>
-            <select
-              value={filtros.estado || ''}
-              onChange={(e) => handleEstadoChange(e.target.value)}
-              className="px-3 py-2 text-sm border border-background-200/70 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 bg-white sm:w-48"
-            >
-              <option value="">Todos los estados</option>
-              <option value="En Cola">En Cola</option>
-              <option value="En Proceso">En Proceso</option>
-              <option value="Produciendo">Produciendo</option>
-              <option value="Esperando suministros">Esperando suministros</option>
-              <option value="Finalizado">Finalizado</option>
-            </select>
+
+            {/* Fila inferior: chips de estado */}
+            <div className="px-4 pb-3 pt-1 flex flex-wrap items-center gap-2 border-t border-background-100/50">
+              <span className="text-xs font-medium text-foreground-500 mr-1 whitespace-nowrap">Estado:</span>
+              {(['', 'En Cola', 'En Proceso', 'Produciendo', 'Esperando suministros', 'Finalizado'] as const).map(est => {
+                const isActive = est === '' ? !filtros.estado : filtros.estado === est;
+                const label = est === '' ? 'Todos' : est;
+                return (
+                  <button
+                    key={est || '__todos'}
+                    onClick={() => handleEstadoChange(est)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-300 cursor-pointer whitespace-nowrap border ${
+                      isActive
+                        ? 'bg-primary-500 text-background-50 border-primary-500 shadow-[0_2px_6px_rgba(0,0,0,0.10)]'
+                        : 'bg-white/60 backdrop-blur-sm border-background-200/50 text-foreground-600 hover:border-background-300/70 hover:bg-white/80 hover:shadow-[0_1px_3px_rgba(0,0,0,0.04)]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Estados de carga / error / vacío */}
@@ -472,12 +656,13 @@ export default function MonitorPage() {
                       )}
                       <MonitorTaskCard
                         tarea={tarea}
-                        comentarios={[]}
+                        comentarios={loadedComments.get(String(tarea.id)) || []}
                         canComment={canComment}
                         hasUnreadComment={isUnread}
                         unreadCommentCount={unreadCount}
                         onVerComentarios={handleVerComentarios}
                         onAgregarComentario={handleAgregarComentario}
+                        onExpand={handleExpandCard}
                       />
                     </div>
                   );

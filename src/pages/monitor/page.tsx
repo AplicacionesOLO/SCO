@@ -41,13 +41,16 @@ export default function MonitorPage() {
   const tareasRef = useRef<Tarea[]>([]);
   
   const currentDate = new Date();
+  const thirtyDaysAgo = new Date(currentDate);
+  thirtyDaysAgo.setDate(currentDate.getDate() - 30);
+  const defaultDesde = `${thirtyDaysAgo.getFullYear()}-${String(thirtyDaysAgo.getMonth() + 1).padStart(2, '0')}-${String(thirtyDaysAgo.getDate()).padStart(2, '0')}`;
   const firstOfMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
   const today = currentDate.toISOString().split('T')[0];
 
   const [filtros, setFiltros] = useState<MonitorFilters>({
     estado: '',
     busqueda: '',
-    fechaDesde: firstOfMonth,
+    fechaDesde: defaultDesde,
     fechaHasta: today
   });
 
@@ -150,10 +153,12 @@ export default function MonitorPage() {
   // Cambiar cluster
   const handleClusterChange = (cluster: ClusterConUsuarios) => {
     const cd = new Date();
-    const fom = `${cd.getFullYear()}-${String(cd.getMonth() + 1).padStart(2, '0')}-01`;
+    const tda = new Date(cd);
+    tda.setDate(cd.getDate() - 30);
+    const fd = `${tda.getFullYear()}-${String(tda.getMonth() + 1).padStart(2, '0')}-${String(tda.getDate()).padStart(2, '0')}`;
     const td = cd.toISOString().split('T')[0];
     setClusterActual(cluster);
-    setFiltros({ estado: '', busqueda: '', fechaDesde: fom, fechaHasta: td });
+    setFiltros({ estado: '', busqueda: '', fechaDesde: fd, fechaHasta: td });
     setFilterUnreadOnly(false);
     setLoadedComments(new Map());
   };
@@ -409,20 +414,16 @@ export default function MonitorPage() {
             <div className={`mb-4 px-4 py-3 rounded-lg border flex items-start gap-3 text-sm ${
               debugInfo.mode === 'LIVE_FULL'
                 ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                : debugInfo.mode === 'LIVE_HYBRID'
-                ? 'bg-amber-50 border-amber-200 text-amber-900'
-                : 'bg-red-50 border-red-200 text-red-900'
+                : 'bg-amber-50 border-amber-200 text-amber-900'
             }`}>
               <span className="mt-0.5">
                 {debugInfo.mode === 'LIVE_FULL' && <i className="ri-check-double-fill text-emerald-600 text-base"></i>}
                 {debugInfo.mode === 'LIVE_HYBRID' && <i className="ri-alert-fill text-amber-600 text-base"></i>}
-                {debugInfo.mode === 'MOCK' && <i className="ri-close-circle-fill text-red-600 text-base"></i>}
               </span>
               <div className="flex-1 min-w-0">
                 <p className="font-medium">
                   {debugInfo.mode === 'LIVE_FULL' && 'Sistema operativo normal'}
                   {debugInfo.mode === 'LIVE_HYBRID' && 'Sistema operativo — tablas del monitor pendientes'}
-                  {debugInfo.mode === 'MOCK' && 'Usando datos de demostración'}
                 </p>
                 <p className="text-xs opacity-80 mt-0.5">
                   {debugInfo.reason}
@@ -431,11 +432,6 @@ export default function MonitorPage() {
                   <p className="text-xs mt-2 opacity-80">
                     Los clusters se generan desde <code className="bg-amber-100 px-1 rounded">datos_formulario→cliente</code> en tareas.
                     Comentarios no disponibles. Ejecutá <code className="bg-amber-100 px-1 rounded">sql_clusters_monitor.sql</code> para activar todas las funciones.
-                  </p>
-                )}
-                {debugInfo.mode === 'MOCK' && (
-                  <p className="text-xs mt-2 opacity-80">
-                    Configurá <code className="bg-red-100 px-1 rounded">VITE_PUBLIC_SUPABASE_URL</code> y <code className="bg-red-100 px-1 rounded">VITE_PUBLIC_SUPABASE_ANON_KEY</code> en el .env.
                   </p>
                 )}
               </div>
@@ -515,6 +511,19 @@ export default function MonitorPage() {
                     }`}
                   >
                     Hoy
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleFechaDesdeChange(defaultDesde);
+                      handleFechaHastaChange(today);
+                    }}
+                    className={`px-3 py-2 rounded-xl text-xs font-medium transition-all duration-300 cursor-pointer whitespace-nowrap border ${
+                      filtros.fechaDesde === defaultDesde && filtros.fechaHasta === today
+                        ? 'bg-accent-500 text-background-50 border-accent-500 shadow-[0_2px_6px_rgba(0,0,0,0.10)]'
+                        : 'bg-background-100/80 backdrop-blur-md border-background-200/50 text-foreground-600 hover:bg-background-200/70 hover:shadow-[0_1px_3px_rgba(0,0,0,0.04)]'
+                    }`}
+                  >
+                    30 días
                   </button>
                   <button
                     onClick={() => {

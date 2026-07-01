@@ -85,7 +85,7 @@ export interface MonitorContexto {
 
 // ─── DIAGNÓSTICO ────────────────────────────────────────
 
-export type MonitorMode = 'LIVE_FULL' | 'LIVE_HYBRID' | 'MOCK';
+export type MonitorMode = 'LIVE_FULL' | 'LIVE_HYBRID';
 
 export interface MonitorDebugInfo {
   mode: MonitorMode;

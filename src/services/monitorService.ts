@@ -1,10 +1,9 @@
 // =====================================================
 // SERVICIO PARA EL MÓDULO DE MONITOR (CLUSTERS)
 // =====================================================
-// Máquina de 3 estados:
-//   LIVE_FULL  → Supabase + tablas de monitor existentes
-//   LIVE_HYBRID → Supabase + tareas accesible pero sin tablas de monitor
-//   MOCK       → Sin Supabase o sin acceso a tareas
+// Siempre usa datos reales de Supabase.
+// - LIVE_FULL  → Supabase + tablas de monitor (clusters, cluster_usuarios, tarea_comentarios)
+// - LIVE_HYBRID → Supabase + tareas accesible pero sin tablas de monitor (clusters sintéticos)
 //
 // "tareas" es la fuente de verdad de liveness.
 // Si podemos leer tareas, el sistema está operativo.
@@ -19,10 +18,8 @@ import type {
   MonitorDebugInfo
 } from '../types/monitor';
 import type { Tarea } from '../types/tarea';
-import { MOCK_CLUSTERS, MOCK_COMENTARIOS, MOCK_MONITOR_STATS } from '../mocks/monitorData';
-
 class MonitorService {
-  private mode: MonitorMode = 'MOCK';
+  private mode: MonitorMode = 'LIVE_FULL';
   private modeReason: string = 'Inicializando...';
 
   // Flags de diagnóstico
@@ -50,8 +47,8 @@ class MonitorService {
 
     // ── Paso 0: ¿Hay URL de Supabase? ──────────────────
     if (!this.supabaseUrl) {
-      this.mode = 'MOCK';
-      this.modeReason = 'No hay VITE_PUBLIC_SUPABASE_URL configurada en .env';
+      this.mode = 'LIVE_HYBRID';
+      this.modeReason = 'No hay VITE_PUBLIC_SUPABASE_URL configurada en .env. Se intentará conexión igual.';
       this.connectionChecked = true;
       this.logDiagnostic();
       return;
@@ -67,14 +64,14 @@ class MonitorService {
       if (tareasError) {
         // PGRST205 = tabla no encontrada, 42P01 = relación no existe
         if (tareasError.code === 'PGRST205' || tareasError.code === '42P01') {
-          this.mode = 'MOCK';
+          this.mode = 'LIVE_HYBRID';
           this.modeReason = `Supabase conectado pero la tabla 'tareas' no existe: ${tareasError.message}`;
         } else if (tareasError.code === 'PGRST301' || tareasError.code === '401') {
           // Error de RLS o autenticación
-          this.mode = 'MOCK';
+          this.mode = 'LIVE_HYBRID';
           this.modeReason = `Supabase conectado pero error de permisos en tareas: ${tareasError.message}`;
         } else {
-          this.mode = 'MOCK';
+          this.mode = 'LIVE_HYBRID';
           this.modeReason = `Supabase conectado pero error al leer tareas: ${tareasError.code} - ${tareasError.message}`;
         }
         this.connectionChecked = true;
@@ -86,7 +83,7 @@ class MonitorService {
       this.tareasAccessible = true;
 
     } catch (err: any) {
-      this.mode = 'MOCK';
+      this.mode = 'LIVE_HYBRID';
       this.modeReason = `Error de red o conexión al consultar tareas: ${err?.message || String(err)}`;
       this.connectionChecked = true;
       this.logDiagnostic();
@@ -179,14 +176,9 @@ class MonitorService {
    * - LIVE_FULL: desde tablas clusters + cluster_usuarios + tareas
    *   (fallback a sintéticos si la tabla clusters está vacía)
    * - LIVE_HYBRID: clusters sintéticos desde DISTINCT datos_formulario->>cliente
-   * - MOCK: datos de prueba
    */
   async getClusters(): Promise<ClusterConUsuarios[]> {
     await this.ensureConnectionChecked();
-
-    if (this.mode === 'MOCK') {
-      return MOCK_CLUSTERS.filter(c => c.activo);
-    }
 
     if (this.mode === 'LIVE_HYBRID') {
       return this.getSyntheticClusters();
@@ -229,9 +221,6 @@ class MonitorService {
 
     // Admin ve todos los clusters activos, sin pasar por cluster_usuarios
     if (rol === 'Admin') {
-      if (this.mode === 'MOCK') {
-        return MOCK_CLUSTERS.filter(c => c.activo);
-      }
       if (this.mode === 'LIVE_HYBRID') {
         return this.getSyntheticClusters();
       }
@@ -244,9 +233,7 @@ class MonitorService {
       const visualizadorClient = rol.replace('Visualizador ', '').trim().toUpperCase();
       
       let allClusters: ClusterConUsuarios[];
-      if (this.mode === 'MOCK') {
-        allClusters = MOCK_CLUSTERS.filter(c => c.activo);
-      } else if (this.mode === 'LIVE_HYBRID') {
+      if (this.mode === 'LIVE_HYBRID') {
         allClusters = await this.getSyntheticClusters();
       } else {
         // LIVE_FULL: obtener todos los clusters activos sin filtro de membresía
@@ -272,13 +259,6 @@ class MonitorService {
 
       // Filtrar solo clusters cuyo cliente coincida con el extraído del rol
       return allClusters.filter(c => (c.cliente || '').toUpperCase() === visualizadorClient);
-    }
-
-    if (this.mode === 'MOCK') {
-      const mockFiltrados = MOCK_CLUSTERS.filter(c =>
-        c.activo && c.usuarios.some(u => u.usuario_id === usuarioId)
-      );
-      return mockFiltrados.length > 0 ? mockFiltrados : MOCK_CLUSTERS.filter(c => c.activo);
     }
 
     if (this.mode === 'LIVE_HYBRID') {
@@ -420,10 +400,6 @@ class MonitorService {
   ): Promise<Tarea[]> {
     await this.ensureConnectionChecked();
 
-    if (this.mode === 'MOCK') {
-      return this.getMockTareasPorCliente(cliente, filtros);
-    }
-
     // LIVE_FULL y LIVE_HYBRID: query directo a tareas
     try {
       let query = supabase
@@ -456,12 +432,7 @@ class MonitorService {
       return (data || []) as Tarea[];
     } catch (err: any) {
       console.warn('[MonitorService] Error en getTareasPorCluster:', err.message);
-      if (this.mode === 'LIVE_HYBRID') {
-        // En hybrid sin fallback a mocks: devolver vacío con warning visible
-        console.warn('[MonitorService] No se pudieron cargar tareas reales. Verificá RLS y permisos.');
-        return [];
-      }
-      return this.getMockTareasPorCliente(cliente, filtros);
+      return [];
     }
   }
 
@@ -471,13 +442,6 @@ class MonitorService {
 
   async getStats(cliente: string): Promise<MonitorStats> {
     await this.ensureConnectionChecked();
-
-    if (this.mode === 'MOCK') {
-      return MOCK_MONITOR_STATS[cliente] || {
-        total: 0, en_cola: 0, en_proceso: 0, produciendo: 0,
-        esperando_suministros: 0, finalizado: 0
-      };
-    }
 
     try {
       const { data, error } = await supabase
@@ -521,18 +485,6 @@ class MonitorService {
 
     if (tareaIds.length === 0) return result;
 
-    // En MOCK y HYBRID: usar mock comentarios para que el tracking funcione
-    if (this.mode === 'MOCK' || this.mode === 'LIVE_HYBRID') {
-      for (const tid of tareaIds) {
-        const tareaComs = MOCK_COMENTARIOS.filter(c => c.tarea_id === tid);
-        if (tareaComs.length > 0) {
-          const maxDate = tareaComs.reduce((max, c) => c.created_at > max ? c.created_at : max, tareaComs[0].created_at);
-          result.set(tid, { latestAt: maxDate, count: tareaComs.length });
-        }
-      }
-      return result;
-    }
-
     // LIVE_FULL
     try {
       const numericIds = tareaIds.map(id => parseInt(id, 10)).filter(n => !isNaN(n));
@@ -566,11 +518,6 @@ class MonitorService {
 
   async getComentarios(tareaId: string): Promise<TareaComentario[]> {
     await this.ensureConnectionChecked();
-
-    // En MOCK y HYBRID: usar mock comentarios
-    if (this.mode === 'MOCK' || this.mode === 'LIVE_HYBRID') {
-      return MOCK_COMENTARIOS.filter(c => c.tarea_id === tareaId);
-    }
 
     // LIVE_FULL: traer comentarios con info real del usuario
     try {
@@ -626,26 +573,6 @@ class MonitorService {
     usuario?: { id: string; email: string; nombre_completo?: string }
   ): Promise<TareaComentario> {
     await this.ensureConnectionChecked();
-
-    if (this.mode === 'MOCK') {
-      const nuevo: TareaComentario = {
-        id: `com-${Date.now()}`,
-        tarea_id: tareaId,
-        usuario_id: usuarioId,
-        usuario: usuario || { id: usuarioId, email: 'usuario@example.com' },
-        comentario,
-        created_at: new Date().toISOString()
-      };
-      MOCK_COMENTARIOS.push(nuevo);
-      return nuevo;
-    }
-
-    if (this.mode === 'LIVE_HYBRID') {
-      throw new Error(
-        'Comentarios no disponibles. Las tablas del monitor (tarea_comentarios) aún no existen. ' +
-        'Ejecutá sql_clusters_monitor.sql en Supabase para habilitar esta función.'
-      );
-    }
 
     // LIVE_FULL
     try {
@@ -780,101 +707,6 @@ class MonitorService {
     }
   }
 
-  // ═══════════════════════════════════════════════════════
-  // MOCK DATA (respaldo última instancia)
-  // ═══════════════════════════════════════════════════════
-
-  private getMockTareasPorCliente(cliente: string, filtros?: MonitorFilters): Tarea[] {
-    const now = new Date();
-    const estadosBase = ['En Cola', 'En Proceso', 'Produciendo', 'Esperando suministros', 'Finalizado'] as const;
-
-    const cantidad = cliente === 'COFERSA' ? 12 : 8;
-    const prefijo = cliente === 'COFERSA' ? 'COF' : 'EPA';
-    const descripcionesCofersa = [
-      'Etiquetado de productos nueva línea',
-      'Cambio de imagen empaque primario',
-      'Re-empacar productos lote B-2026',
-      'Suministros para línea de producción A',
-      'Licencias de importación lote marzo',
-      'Etiquetado bilingüe para exportación',
-      'Cambio de imagen cajas display',
-      'Re-empacar devoluciones cliente X',
-      'Suministros etiquetas holográficas',
-      'Licencias renovación anual',
-      'Etiquetado promocional temporada',
-      'Cambio de imagen catálogo digital'
-    ];
-    const descripcionesEPA = [
-      'Códigos de barra producto nuevo',
-      'Registros sanitarios línea cosméticos',
-      'Licencias contenedor mayo 2026',
-      'Traducción manuales al inglés',
-      'Suministros material empaque',
-      'Usos Delta Plus certificación',
-      'Armado de sillas exhibición',
-      'Códigos de barra actualización masiva'
-    ];
-
-    const descs = cliente === 'COFERSA' ? descripcionesCofersa : descripcionesEPA;
-
-    const tareasMock: Tarea[] = [];
-    for (let i = 0; i < cantidad; i++) {
-      const diasAtras = Math.floor(Math.random() * 30);
-      const fecha = new Date(now);
-      fecha.setDate(fecha.getDate() - diasAtras);
-
-      const estadoIndex = Math.min(Math.floor(i / (cantidad / estadosBase.length)), estadosBase.length - 1);
-      const estado = estadosBase[estadoIndex];
-
-      const fechaEstimada = new Date(fecha);
-      fechaEstimada.setDate(fechaEstimada.getDate() + 7 + Math.floor(Math.random() * 14));
-
-      tareasMock.push({
-        id: `mock-${prefijo}-${String(i + 1).padStart(3, '0')}`,
-        consecutivo: `${prefijo}-2026-${String(i + 1).padStart(4, '0')}`,
-        tienda_id: 1,
-        solicitante_id: `user-${100 + i}`,
-        email_solicitante: 'solicitante@example.com',
-        datos_formulario: {
-          cliente,
-          departamento_solicitante: i % 2 === 0 ? 'Servicio al Cliente' : 'Zona Franca',
-          solicitud_cofersa: cliente === 'COFERSA' ? (['Etiquetado', 'Cambio de imagen', 'Re-empacar productos', 'Suministros', 'Licencias'] as const)[i % 5] : undefined,
-          solicitud_epa: cliente === 'EPA' ? (['Códigos de Barra', 'Registros sanitarios', 'Licencias / contenedores / Pallets', 'Traducción', 'Suministros', 'Usos Delta Plus', 'Armado de sillas'] as const)[i % 7] : undefined
-        },
-        fecha_estimada_entrega: fechaEstimada.toISOString().split('T')[0],
-        cantidad_unidades: 100 + Math.floor(Math.random() * 900),
-        descripcion_breve: descs[i] || `Tarea ${i + 1}`,
-        estado,
-        total_costo: 50000 + Math.floor(Math.random() * 450000),
-        created_at: fecha.toISOString(),
-        updated_at: fecha.toISOString()
-      });
-    }
-
-    let resultado = tareasMock;
-
-    if (filtros?.estado) {
-      resultado = resultado.filter(t => t.estado === filtros.estado);
-    }
-    if (filtros?.fechaDesde) {
-      const desde = new Date(`${filtros.fechaDesde}T00:00:00`);
-      resultado = resultado.filter(t => new Date(t.created_at) >= desde);
-    }
-    if (filtros?.fechaHasta) {
-      const hasta = new Date(`${filtros.fechaHasta}T23:59:59`);
-      resultado = resultado.filter(t => new Date(t.created_at) <= hasta);
-    }
-    if (filtros?.busqueda) {
-      const q = filtros.busqueda.toLowerCase();
-      resultado = resultado.filter(t =>
-        t.consecutivo?.toLowerCase().includes(q) ||
-        t.descripcion_breve?.toLowerCase().includes(q) ||
-        t.email_solicitante?.toLowerCase().includes(q)
-      );
-    }
-
-    return resultado;
-  }
 }
 
 export const monitorService = new MonitorService();
